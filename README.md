@@ -6,7 +6,7 @@ Ported from the "Early Pull" WeakAura (https://wago.io/V4JIxqNQ4) to a standalon
 
 ## Install
 
-1. Unzip `EarlyPull-1.0.0-rc1.zip` into your `World of Warcraft\_retail_\Interface\AddOns\` folder. You should end up with `...\AddOns\EarlyPull\` containing `EarlyPull.toc`, `Core.lua`, `Options.lua`.
+1. Unzip the release archive into your `World of Warcraft\_retail_\Interface\AddOns\` folder. You should end up with `...\AddOns\EarlyPull\` containing `EarlyPull.toc`, `Core.lua`, `Options.lua`.
 2. At the character-select screen, click **AddOns** and make sure **EarlyPull** is enabled.
 3. Log in. You'll see no UI; the addon just listens for pulls.
 
@@ -25,8 +25,6 @@ It scores combat-log events, boss threat tables, and boss targeting in a short w
 
 - `/earlypull` or `/ep` — open the settings panel
 - `/earlypull details` — print the last pull's blame breakdown
-- `/earlypull debug` — toggle verbose debug output
-- `/earlypull test` — print current state (group, channel, sync)
 - `/earlypull reset` — wipe SavedVariables (requires `/reload`)
 
 ### Settings

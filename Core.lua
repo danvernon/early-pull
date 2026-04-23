@@ -264,12 +264,6 @@ function EarlyPull:Print(...)
     print("|cff55ffdd"..self.id..":|r", ...)
 end
 
-function EarlyPull:Debug(...)
-    if self.debug then
-        print("|cffffcc00"..self.id.." debug:|r", ...)
-    end
-end
-
 function EarlyPull:AdvanceLog(log)
     local pos = (log.pos % log.maxPos) + 1
     log.pos = pos
@@ -420,7 +414,6 @@ function EarlyPull:START_TIMER(timerType, timeRemaining, totalTime)
         return
     end
     self.expectedPullTimeBlizz = GetTime() + timeRemaining
-    self:Debug("START_TIMER set expectedPullTimeBlizz to +"..tostring(timeRemaining).."s")
 end
 
 function EarlyPull:STOP_TIMER_OF_TYPE(timerType)
@@ -432,7 +425,6 @@ end
 
 function EarlyPull:START_PLAYER_COUNTDOWN(initiatedBy, timeRemaining, totalTime)
     self.expectedPullTimeBlizz = GetTime() + timeRemaining
-    self:Debug("START_PLAYER_COUNTDOWN set expectedPullTimeBlizz to +"..tostring(timeRemaining).."s")
 end
 
 function EarlyPull:CANCEL_PLAYER_COUNTDOWN(initiatedBy)
@@ -708,14 +700,10 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
     local now = GetTime()
     local expectedPullTime = self.expectedPullTimeDBM or self.expectedPullTimeBlizz
     local pullTimeDiff = expectedPullTime and abs(now - expectedPullTime) <= self.maxPullTimeDiff and now - expectedPullTime
-    self:Debug(format("ENCOUNTER_START id=%s name=%s diff=%s DBM=%s Blizz=%s",
-        tostring(encounterID), tostring(encounterName),
-        tostring(pullTimeDiff), tostring(self.expectedPullTimeDBM), tostring(self.expectedPullTimeBlizz)))
     self.expectedPullTimeDBM = nil
     self.expectedPullTimeBlizz = nil
 
     local announceChannel, pullDesc = self:ClassifyPull(pullTimeDiff)
-    self:Debug(format("ClassifyPull -> channel=%s desc=%s", tostring(announceChannel), tostring(pullDesc)))
     local syncSent = false
     if self.syncEnabled and announceChannel and announceChannel ~= "PRINT" then
         local channel = self:GetGroupChannel()
@@ -726,7 +714,6 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
             syncSent = true
         end
     end
-    self:Debug("syncSent="..tostring(syncSent))
 
     self.pullContext = {
         pullTime = now,
@@ -737,20 +724,9 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
         encounterName = encounterName,
         syncSent = syncSent,
     }
-    self:Debug("afterPullDelay="..tostring(self.afterPullDelay).." scheduling timer")
-    local ok, err = pcall(function()
-        C_Timer.After(self.afterPullDelay, function()
-            self:Debug("timer fired, entering EARLY_PULL_AFTER_PULL")
-            local ok2, err2 = pcall(self.EARLY_PULL_AFTER_PULL, self, self.id, now, 1)
-            if not ok2 then
-                self:Print("ERROR in EARLY_PULL_AFTER_PULL: "..tostring(err2))
-            end
-        end)
+    C_Timer.After(self.afterPullDelay, function()
+        self:EARLY_PULL_AFTER_PULL(self.id, now, 1)
     end)
-    if not ok then
-        self:Print("ERROR scheduling C_Timer.After: "..tostring(err))
-    end
-    self:Debug("timer scheduled")
 
     self:ScanAllBosses()
 end
@@ -959,10 +935,8 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
     local ctx = self.pullContext
 
     if id ~= self.id or not ctx or pullTime ~= ctx.pullTime then
-        self:Debug("EARLY_PULL_AFTER_PULL early return id="..tostring(id).." ctx="..tostring(ctx))
         return
     end
-    self:Debug("EARLY_PULL_AFTER_PULL attempt "..afterPullIndex.." announceChannel="..tostring(ctx.announceChannel).." syncSent="..tostring(ctx.syncSent).." announceSeen="..tostring(ctx.announceSeen))
 
     if afterPullIndex == 1 then
         local bestCand, secondCand = self:DetermineBlame(ctx)
@@ -1017,29 +991,18 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
     end
 
     C_Timer.After(self.afterPullDelay, function()
-        local ok, err = pcall(self.EARLY_PULL_AFTER_PULL, self, id, pullTime, afterPullIndex + 1)
-        if not ok then
-            self:Print("ERROR in EARLY_PULL_AFTER_PULL attempt "..(afterPullIndex + 1)..": "..tostring(err))
-        end
+        self:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex + 1)
     end)
 end
 
 function EarlyPull:Announce(announceChannel, message)
-    self:Debug("Announce channel="..tostring(announceChannel).." msg="..tostring(message))
     if announceChannel == "PRINT" then
         self:Print(message)
         return true
     elseif announceChannel and not (announceChannel == "SAY" and not self:IsSayAllowed()) then
-        -- Midnight: prefer C_ChatInfo.SendChatMessage over the legacy global,
-        -- which may be silently blocked for addon-initiated combat chat.
+        -- Midnight: prefer C_ChatInfo.SendChatMessage over the legacy global.
         local sender = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-        local ok, err = pcall(sender, message, announceChannel)
-        if not ok then
-            self:Print("SendChatMessage failed: "..tostring(err))
-            return false
-        end
-        self:Debug("SendChatMessage("..announceChannel..") ok via "
-            ..((C_ChatInfo and C_ChatInfo.SendChatMessage) and "C_ChatInfo" or "global"))
+        sender(message, announceChannel)
         return true
     end
     return false
@@ -1094,24 +1057,13 @@ SlashCmdList["EARLYPULL"] = function(msg)
     elseif msg == "reset" then
         EarlyPullDB = nil
         EarlyPull:Print("Settings reset. Reload UI (/reload) to apply.")
-    elseif msg == "debug" then
-        EarlyPull.debug = not EarlyPull.debug
-        EarlyPull:Print("Debug mode: "..(EarlyPull.debug and "ON" or "OFF"))
-    elseif msg == "test" then
-        EarlyPull:Print("inParty="..tostring(EarlyPull.inParty)
-            .." inRaid="..tostring(EarlyPull.inRaid)
-            .." inInstance="..tostring(EarlyPull.inInstance)
-            .." inInstanceGroup="..tostring(EarlyPull.inInstanceGroup)
-            .." syncEnabled="..tostring(EarlyPull.syncEnabled)
-            .." groupChannel="..tostring(EarlyPull:GetGroupChannel())
-            .." sayAllowed="..tostring(EarlyPull:IsSayAllowed()))
     elseif msg == "config" or msg == "" then
         if Settings and Settings.OpenToCategory and EarlyPull.settingsCategoryID then
             Settings.OpenToCategory(EarlyPull.settingsCategoryID)
         else
-            EarlyPull:Print("Usage: /earlypull [config|details|debug|test|reset]")
+            EarlyPull:Print("Usage: /earlypull [config|details|reset]")
         end
     else
-        EarlyPull:Print("Usage: /earlypull [config|details|debug|test|reset]")
+        EarlyPull:Print("Usage: /earlypull [config|details|reset]")
     end
 end

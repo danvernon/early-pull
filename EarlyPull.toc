@@ -1,0 +1,9 @@
+## Interface: 120001, 120005
+## Title: EarlyPull
+## Notes: Announces who pulled the boss and how early/late, based on DBM/BW pull timers. Ported from the "Early Pull" WeakAura (wago.io/V4JIxqNQ4).
+## Author: Local Dev
+## Version: 1.0.0-rc1
+## SavedVariables: EarlyPullDB
+
+Core.lua
+Options.lua

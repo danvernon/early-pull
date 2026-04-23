@@ -1,0 +1,6 @@
+package-as: EarlyPull
+
+ignore:
+  - README.md
+  - CHANGELOG.md
+  - .gitignore

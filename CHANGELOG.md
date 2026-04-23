@@ -1,8 +1,8 @@
 # Changelog
 
-## 1.0.0
+## 1.0.0-rc2
 
-First stable release. Cleaned up diagnostic scaffolding left over from rc1's in-game debugging:
+Production-ready candidate. Cleaned up diagnostic scaffolding left over from rc1's in-game debugging:
 
 - Removed `self:Debug(...)` helper and all call sites.
 - Removed `pcall` wrappers around `C_Timer.After` callbacks and the "ERROR in EARLY_PULL_AFTER_PULL" fallback prints.

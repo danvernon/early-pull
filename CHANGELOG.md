@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc3
+
+Switched from chat broadcast to local-only notification:
+
+- Pull announcements now display as a **Banner** (center-screen raid-warning style, via `RaidNotice_AddMessage`) or as a local **Chat** line. No more `SAY` / `RAID` / `PARTY` broadcasts — Midnight's addon-chat restrictions and SAY display filtering made those unreliable anyway.
+- Each user who runs EarlyPull gets their own banner. Nothing is broadcast to other raid members.
+- Removed the sync-coordination scaffolding (Sync Priority setting, `CHAT_MSG_ADDON` for the EarlyPull prefix, multi-attempt `EARLY_PULL_AFTER_PULL` loop). Not needed when display is local.
+- Added `/earlypull test` to simulate a pull banner without needing a raid encounter — useful for verifying the addon installed correctly.
+- Updated options panel: announce dropdowns now show Banner / Chat / None. Sync Priority slider removed.
+
 ## 1.0.0-rc2
 
 Production-ready candidate. Cleaned up diagnostic scaffolding left over from rc1's in-game debugging:

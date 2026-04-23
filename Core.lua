@@ -77,10 +77,10 @@ local function safeKey(v)
 end
 
 EarlyPull.defaults = {
-    announceEarlyPull = 2,   -- Group (RAID/PARTY) — most reliable in Midnight
-    announceOnTimePull = 2,
-    announceLatePull = 2,
-    announceUntimedPull = 2,
+    announceEarlyPull = 1,   -- Banner (RaidNotice, local)
+    announceOnTimePull = 1,
+    announceLatePull = 1,
+    announceUntimedPull = 1,
     pullTimeDiffDecimals = 2,
     pullOnTimeWindow = 0.005,
     maxPullTimeDiff = 10,
@@ -606,14 +606,11 @@ end
 
 function EarlyPull:GetAnnounceChannel(announceType)
     if announceType == 1 then
-        return self:IsSayAllowed() and "SAY" or "PRINT"
+        return "BANNER"
     elseif announceType == 2 then
-        return self:GetGroupChannel() or "PRINT"
-    elseif announceType == 3 then
-        return "PRINT"
-    elseif announceType == 4 then
-        return nil
+        return "CHAT"
     end
+    return nil
 end
 
 function EarlyPull:ClassifyPull(pullTimeDiff)
@@ -704,16 +701,6 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
     self.expectedPullTimeBlizz = nil
 
     local announceChannel, pullDesc = self:ClassifyPull(pullTimeDiff)
-    local syncSent = false
-    if self.syncEnabled and announceChannel and announceChannel ~= "PRINT" then
-        local channel = self:GetGroupChannel()
-        if channel then
-            local syncTable = self:CreateSyncTable(encounterID)
-            local message = self:SerializeSyncTable(syncTable)
-            self:SendSync(message, channel)
-            syncSent = true
-        end
-    end
 
     self.pullContext = {
         pullTime = now,
@@ -722,7 +709,7 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
         pullDesc = pullDesc,
         encounterID = encounterID,
         encounterName = encounterName,
-        syncSent = syncSent,
+        syncSent = false, -- retained for EARLY_PULL_AFTER_PULL compatibility
     }
     C_Timer.After(self.afterPullDelay, function()
         self:EARLY_PULL_AFTER_PULL(self.id, now, 1)
@@ -996,13 +983,16 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
 end
 
 function EarlyPull:Announce(announceChannel, message)
-    if announceChannel == "PRINT" then
-        self:Print(message)
+    if announceChannel == "BANNER" then
+        if RaidNotice_AddMessage and RaidWarningFrame then
+            local info = ChatTypeInfo and ChatTypeInfo["RAID_WARNING"]
+            RaidNotice_AddMessage(RaidWarningFrame, message, info or {r = 1, g = 0.3, b = 0.3})
+        else
+            self:Print(message)
+        end
         return true
-    elseif announceChannel and not (announceChannel == "SAY" and not self:IsSayAllowed()) then
-        -- Midnight: prefer C_ChatInfo.SendChatMessage over the legacy global.
-        local sender = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-        sender(message, announceChannel)
+    elseif announceChannel == "CHAT" then
+        self:Print(message)
         return true
     end
     return false
@@ -1050,6 +1040,17 @@ end)
 
 SLASH_EARLYPULL1 = "/earlypull"
 SLASH_EARLYPULL2 = "/ep"
+local function simulatePull()
+    local channel = EarlyPull:GetAnnounceChannel(EarlyPull.announceEarlyPull or 1)
+    local name = EarlyPull.myName or UnitName("player") or "TestPlayer"
+    local message = format("Boss pulled 1.23 seconds early by %s.", name)
+    if channel then
+        EarlyPull:Announce(channel, message)
+    else
+        EarlyPull:Print("Announce channel is 'None' — change it in /earlypull to see the banner/chat.")
+    end
+end
+
 SlashCmdList["EARLYPULL"] = function(msg)
     msg = (msg or ""):lower():match("^%s*(.-)%s*$")
     if msg == "details" or msg == "d" then
@@ -1057,13 +1058,15 @@ SlashCmdList["EARLYPULL"] = function(msg)
     elseif msg == "reset" then
         EarlyPullDB = nil
         EarlyPull:Print("Settings reset. Reload UI (/reload) to apply.")
+    elseif msg == "test" or msg == "simulate" then
+        simulatePull()
     elseif msg == "config" or msg == "" then
         if Settings and Settings.OpenToCategory and EarlyPull.settingsCategoryID then
             Settings.OpenToCategory(EarlyPull.settingsCategoryID)
         else
-            EarlyPull:Print("Usage: /earlypull [config|details|reset]")
+            EarlyPull:Print("Usage: /earlypull [config|details|test|reset]")
         end
     else
-        EarlyPull:Print("Usage: /earlypull [config|details|reset]")
+        EarlyPull:Print("Usage: /earlypull [config|details|test|reset]")
     end
 end

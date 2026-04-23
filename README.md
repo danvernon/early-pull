@@ -24,6 +24,7 @@ It scores combat-log events, boss threat tables, and boss targeting in a short w
 ### Slash commands
 
 - `/earlypull` or `/ep` — open the settings panel
+- `/earlypull test` — simulate a pull banner without needing a raid encounter
 - `/earlypull details` — print the last pull's blame breakdown
 - `/earlypull reset` — wipe SavedVariables (requires `/reload`)
 
@@ -31,17 +32,16 @@ It scores combat-log events, boss threat tables, and boss targeting in a short w
 
 Open via `/earlypull` or Game Menu → Options → AddOns → EarlyPull.
 
-- **Early / On-Time / Late / Untimed Pull** — announce channel: Say, Group, Print, or None. Default is **Group** (RAID or PARTY chat). Say is often filtered out of chat displays in instances — prefer Group.
+- **Early / On-Time / Late / Untimed Pull** — how to display the pull: **Banner** (center-screen raid-warning style, the default), **Chat** (local chat line), or **None**. Display is local-only — the addon does not broadcast to chat, so nobody else sees the call-out unless they also run EarlyPull.
 - **Pull Time Diff Decimals** — how many decimals in the seconds value.
 - **On-Time Window (seconds)** — ± this much from the timer is considered "on time".
 - **Max Pull Time Diff (seconds)** — if the actual pull is more than this far from the timer, the pull is treated as untimed.
-- **Sync Priority** — when multiple players have EarlyPull, only the highest-priority one announces. Low / Normal / High / Isolated (disables sync).
-- **Auto-Print Details** — print blame scores to local chat after every pull.
+- **Auto-Print Details** — also print blame scores to local chat after every pull.
 
 ## Known limitations on Midnight (12.0+)
 
-- Blame attribution falls back to character name when player GUIDs come back as opaque "secret" values. The announcement still identifies the right player but may omit the spell link in edge cases.
-- `Say` chat from addons appears to be hidden from the sender's own chat tab in many Midnight instances. Group/RAID chat is recommended.
+- Blame attribution falls back to character name when player GUIDs come back as opaque "secret" values. The banner still names the right player but may omit the spell link in edge cases.
+- Display is local-only by design. Midnight's addon-chat restrictions in instanced combat (and chat-tab filtering of the sender's own SAY messages) make a reliable broadcast announcement impractical, so EarlyPull shows the notification to the user running it. Raid members who also install the addon each get their own banner.
 
 ## Credits
 

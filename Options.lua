@@ -13,17 +13,9 @@ local function makeSetter(key)
 end
 
 local announceValues = {
-    {1, "Say"},
-    {2, "Group"},
-    {3, "Print"},
-    {4, "None"},
-}
-
-local syncPriorityValues = {
-    {1, "Low"},
-    {2, "Normal"},
-    {3, "High"},
-    {4, "Isolated"},
+    {1, "Banner"},
+    {2, "Chat"},
+    {3, "None"},
 }
 
 local function addDropdown(category, key, name, tooltip, values, default)
@@ -66,10 +58,10 @@ local function BuildPanel()
     end
 
     addHeader(layout, "Announce Options")
-    addDropdown(category, "announceEarlyPull",   "Early Pull",   "Announce option for early pulls.",   announceValues, 2)
-    addDropdown(category, "announceOnTimePull",  "On-Time Pull", "Announce option for on-time pulls.", announceValues, 2)
-    addDropdown(category, "announceLatePull",    "Late Pull",    "Announce option for late pulls.",    announceValues, 2)
-    addDropdown(category, "announceUntimedPull", "Untimed Pull", "Announce option for untimed pulls.", announceValues, 2)
+    addDropdown(category, "announceEarlyPull",   "Early Pull",   "How to display early pulls. Banner = center-screen raid-warning style; Chat = local chat line; None = disabled.",   announceValues, 1)
+    addDropdown(category, "announceOnTimePull",  "On-Time Pull", "How to display on-time pulls.", announceValues, 1)
+    addDropdown(category, "announceLatePull",    "Late Pull",    "How to display late pulls.",    announceValues, 1)
+    addDropdown(category, "announceUntimedPull", "Untimed Pull", "How to display untimed pulls.", announceValues, 1)
     addSlider(category, "pullTimeDiffDecimals", "Pull Time Diff Decimals",
         "Decimal places to round the pull time diff.", 1, 3, 1, 2,
         function(v) return tostring(v) end)
@@ -79,11 +71,8 @@ local function BuildPanel()
     addSlider(category, "maxPullTimeDiff", "Max Pull Time Diff (seconds)",
         "Maximum pull time diff to announce; otherwise the pull is untimed.", 1, 30, 1, 10,
         function(v) return format("%ds", v) end)
-    addDropdown(category, "syncPriority", "Sync Priority",
-        "Priority for being the announcer when multiple people run this addon. Isolated disables sync entirely.",
-        syncPriorityValues, 2)
     addCheckbox(category, "autoPrintDetails", "Auto-Print Details",
-        "Automatically print pull blame scores after each pull.", false)
+        "Also print pull blame scores to local chat after each pull.", false)
 
     Settings.RegisterAddOnCategory(category)
     EarlyPull.settingsCategoryID = category:GetID()

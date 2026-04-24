@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-rc4
+
+Scope detection to raid instances and harden the combat log filter:
+
+- `ENCOUNTER_START` now bails out unless `IsInInstance()` returns `"raid"`. Dungeons, scenarios, timewalking, and world bosses no longer trigger a banner, since they often don't populate boss units or emit events inside the narrow scoring window and produced misleading "unknown cause" blame results.
+- Added `issecretvalue` guards on `sourceFlags` and `destFlags` in the combat log handler. If Midnight ever marks flag fields secret for a player-controlled event, the bitwise filter would have errored silently and dropped the entry; now it just skips cleanly.
+- `/earlypull test` still works in any context — bypasses the raid gate and renders the banner directly so you can smoke-test the display without being in a raid.
+
 ## 1.0.0-rc3
 
 Switched from chat broadcast to local-only notification:

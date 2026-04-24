@@ -564,11 +564,14 @@ function EarlyPull:COMBAT_LOG_EVENT_UNFILTERED()
         return
     end
 
-    if not sourceFlags or bit_band(sourceFlags, kSourceFlagMask) ~= kSourceFlagFilter then
+    -- Midnight: skip if flag fields are secret numbers — bitwise ops on them
+    -- would throw silently and drop the rest of the handler.
+    if not sourceFlags or issecretvalue(sourceFlags)
+    or bit_band(sourceFlags, kSourceFlagMask) ~= kSourceFlagFilter then
         return
     end
 
-    if not destFlags then return end
+    if not destFlags or issecretvalue(destFlags) then return end
     local destFlagsMasked = bit_band(destFlags, kDestFlagMask)
     if destFlagsMasked ~= kDestFlagFilter1 and destFlagsMasked ~= kDestFlagFilter2 then
         return
@@ -693,6 +696,15 @@ function EarlyPull:SendSync(message, channel)
 end
 
 function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
+    -- Scope to raid instances only. Dungeons, scenarios, world bosses, and
+    -- timewalking content often don't populate boss units or produce events
+    -- in the narrow scoring window, which gives misleading "unknown cause"
+    -- results.
+    local _, instanceType = IsInInstance()
+    if instanceType ~= "raid" then
+        return
+    end
+
     encounterID = safeKey(encounterID) or 0
     local now = GetTime()
     local expectedPullTime = self.expectedPullTimeDBM or self.expectedPullTimeBlizz

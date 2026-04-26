@@ -63,6 +63,13 @@ local kNegInfinity = -math.huge
 -- cannot be used as table keys. Guard every GUID-as-key access.
 local issecretvalue = _G.issecretvalue or function() return false end
 
+-- Polling delays (seconds, absolute from ENCOUNTER_START) for damage-meter
+-- snapshots. Each tick re-queries the session; first one that finds a
+-- damaging player announces and stops the chain. Extended past 2s because
+-- the C_DamageMeter session sometimes doesn't populate inside the first
+-- second of an encounter, especially after a UI reload.
+local kPollDelays = {0.2, 0.5, 1.0, 2.0, 3.5, 5.0, 7.0}
+
 local function safeUnitGUID(unit)
     local ok, guid = pcall(UnitGUID, unit)
     if not ok or guid == nil or issecretvalue(guid) then
@@ -235,6 +242,7 @@ function EarlyPull:RegisterEvents()
         "UPDATE_INSTANCE_INFO",
         "ENCOUNTER_START",
         "INSTANCE_ENCOUNTER_ENGAGE_UNIT",
+        "DAMAGE_METER_COMBAT_SESSION_UPDATED",
         "COMBAT_LOG_EVENT_UNFILTERED",
     }
     for _, event in ipairs(events) do
@@ -538,9 +546,11 @@ function EarlyPull:COMBAT_LOG_EVENT_UNFILTERED()
     local _, event, _, sourceGUID, sourceName, sourceFlags, _, destGUID, _, destFlags, _, spellID, _, _, auraType
         = CombatLogGetCurrentEventInfo()
 
+    self.cleuRaw = (self.cleuRaw or 0) + 1
     if not self.combatLogTrackedEvents[event] then
         return
     end
+    self.cleuTracked = (self.cleuTracked or 0) + 1
 
     if event == "SPELL_SUMMON" then
         local destKey = safeKey(destGUID)
@@ -563,19 +573,29 @@ function EarlyPull:COMBAT_LOG_EVENT_UNFILTERED()
     or (event == "SPELL_AURA_APPLIED" and auraType ~= "DEBUFF") then
         return
     end
+    self.cleuPostGuidAura = (self.cleuPostGuidAura or 0) + 1
 
-    -- Midnight: skip if flag fields are secret numbers — bitwise ops on them
-    -- would throw silently and drop the rest of the handler.
-    if not sourceFlags or issecretvalue(sourceFlags)
-    or bit_band(sourceFlags, kSourceFlagMask) ~= kSourceFlagFilter then
-        return
+    -- Midnight: sourceFlags may be secret for other raid members (privacy).
+    -- Use the flag filter when we can read it; fall back to GUID prefix when
+    -- we can't, so we don't silently drop every other raider's events.
+    if sourceFlags and not issecretvalue(sourceFlags) then
+        if bit_band(sourceFlags, kSourceFlagMask) ~= kSourceFlagFilter then
+            return
+        end
+    elseif sourceGUID and not issecretvalue(sourceGUID) then
+        local prefix = sourceGUID:match("^([^-]+)-")
+        if prefix ~= "Player" and prefix ~= "Pet" and prefix ~= "Vehicle" then
+            return
+        end
     end
+    self.cleuPostSrc = (self.cleuPostSrc or 0) + 1
 
     if not destFlags or issecretvalue(destFlags) then return end
     local destFlagsMasked = bit_band(destFlags, kDestFlagMask)
     if destFlagsMasked ~= kDestFlagFilter1 and destFlagsMasked ~= kDestFlagFilter2 then
         return
     end
+    self.cleuPostDst = (self.cleuPostDst or 0) + 1
 
     -- Midnight: sourceGUID may be secret; fall back to a name-based key so we
     -- can still identify the culprit. destGUID is only used to check if the
@@ -591,6 +611,7 @@ function EarlyPull:COMBAT_LOG_EVENT_UNFILTERED()
     entry.event = event
     entry.destGUID = destKey
     entry.spellID = safeKey(spellID)
+    self.cleuWritten = (self.cleuWritten or 0) + 1
 end
 
 function EarlyPull:GetGroupChannel()
@@ -695,6 +716,141 @@ function EarlyPull:SendSync(message, channel)
     entry.message = message
 end
 
+-- Midnight (12.0+): COMBAT_LOG_EVENT_UNFILTERED is silently disabled inside
+-- restricted contexts (raid encounters, M+, PvP). Use the Blizzard-provided
+-- damage-meter API to identify the puller instead. Returns the actor with
+-- the highest non-zero damage in the current session, or nil if the API
+-- isn't ready or no players have damage yet.
+-- Read who the boss is targeting at this moment. The boss targets whoever
+-- has highest threat, and at the very start of an encounter that's the
+-- person who pulled (typically the tank). Different API surface than CLEU
+-- and the damage meter — may bypass Midnight's restricted-state filters.
+function EarlyPull:GetPullerFromBossTarget()
+    for i = 1, 8 do
+        local unit = "boss"..i.."target"
+        local exists = UnitExists(unit)
+        local isPlayer = exists and UnitIsPlayer(unit)
+        local name, realm = (exists and UnitName(unit)) or nil, nil
+        if exists and self.autoPrintDetails and not self._btDumped then
+            self._btDumped = true
+            self:Print(format("BT scan: %s exists=%s isPlayer=%s name=%s",
+                unit, tostring(exists), tostring(isPlayer), tostring(name)))
+        end
+        if isPlayer and name and name ~= UNKNOWN and not issecretvalue(name) then
+            local _, classFile = UnitClass(unit)
+            return {
+                name = realm and realm ~= "" and (name.."-"..realm) or name,
+                classFilename = classFile,
+                sourceGUID = safeUnitGUID(unit),
+            }
+        end
+    end
+    return nil
+end
+
+-- Fired by Blizzard's damage meter system per damage/heal event. The first
+-- fire after ENCOUNTER_START is the soonest moment we can snapshot — usually
+-- the session contains only the actual puller at that instant, so this gives
+-- a much better attribution than waiting for the +0.5s polling tick.
+function EarlyPull:DAMAGE_METER_COMBAT_SESSION_UPDATED()
+    local ctx = self.pullContext
+    if not ctx or ctx.puller then return end
+    -- Prefer boss target (= tank = puller) over damage-meter heuristic.
+    local actor = self:GetPullerFromBossTarget() or self:GetPullerFromDamageMeter()
+    if not actor then return end
+    ctx.puller = actor
+    ctx.message = ctx.pullDesc.." by "..self:FormatPullerName(actor).."."
+    self:Announce(ctx.announceChannel, ctx.message)
+    if self.autoPrintDetails then
+        self:PrintPullDetails()
+    end
+end
+
+function EarlyPull:GetPullerFromDamageMeter()
+    if not (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType) then
+        if self.autoPrintDetails then self:Print("DM: C_DamageMeter API not available.") end
+        return nil
+    end
+    if not (Enum and Enum.DamageMeterSessionType and Enum.DamageMeterType) then
+        if self.autoPrintDetails then self:Print("DM: Enum.DamageMeter* not available.") end
+        return nil
+    end
+
+    local ok, session = pcall(C_DamageMeter.GetCombatSessionFromType,
+        Enum.DamageMeterSessionType.Current,
+        Enum.DamageMeterType.DamageDone)
+
+    -- Always dump per poll so we can see the session populating over time.
+    if self.autoPrintDetails then
+        if not ok then
+            self:Print(format("DM: pcall error: %s", tostring(session)))
+        elseif not session then
+            self:Print("DM: session is nil.")
+        elseif not session.combatSources then
+            self:Print(format("DM: combatSources is nil. fields=%s",
+                tostring(session.totalAmount)))
+        else
+            self:Print(format("DM poll: sources=%d totalAmount=%s duration=%s",
+                #session.combatSources, tostring(session.totalAmount),
+                tostring(session.durationSeconds)))
+            for i, actor in ipairs(session.combatSources) do
+                if i <= 3 then
+                    self:Print(format("  src[%d]: name=%s totalAmount=%s class=%s",
+                        i, tostring(actor.name),
+                        tostring(actor.totalAmount or actor.total),
+                        tostring(actor.classFilename)))
+                end
+            end
+        end
+    end
+
+    if not ok or not session or not session.combatSources then
+        return nil
+    end
+
+    local bestActor, bestTotal = nil, 0
+    local cmpErrors = 0
+    for _, actor in ipairs(session.combatSources) do
+        local total = actor.totalAmount or actor.total
+        local ok = pcall(function()
+            if total and total > bestTotal then
+                bestTotal = total
+                bestActor = actor
+            end
+        end)
+        if not ok then cmpErrors = cmpErrors + 1 end
+    end
+
+    -- Fallback: if every comparison errored (likely all damage values are
+    -- secret-wrapped numbers in restricted state), just take the first actor
+    -- in the list. Not strictly the puller, but better than nothing.
+    if not bestActor and #session.combatSources > 0 then
+        bestActor = session.combatSources[1]
+    end
+
+    if self.autoPrintDetails then
+        self:Print(format("DM selection: bestActor=%s bestTotal=%s cmpErrors=%d sources=%d",
+            bestActor and tostring(bestActor.name) or "nil",
+            tostring(bestTotal), cmpErrors, #session.combatSources))
+    end
+    return bestActor
+end
+
+function EarlyPull:FormatPullerName(actor)
+    if not actor then return "[Unknown]" end
+    local ok, formatted = pcall(function()
+        local name = actor.name or "[Unknown]"
+        local class = safeKey(actor.classFilename)
+        if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
+            local c = RAID_CLASS_COLORS[class]
+            return format("|cff%02x%02x%02x%s|r", c.r * 255, c.g * 255, c.b * 255, name)
+        end
+        return tostring(name)
+    end)
+    if ok and formatted then return formatted end
+    return "[Unknown]"
+end
+
 function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
     -- Scope to raid instances only. Dungeons, scenarios, world bosses, and
     -- timewalking content often don't populate boss units or produce events
@@ -711,6 +867,7 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
     local pullTimeDiff = expectedPullTime and abs(now - expectedPullTime) <= self.maxPullTimeDiff and now - expectedPullTime
     self.expectedPullTimeDBM = nil
     self.expectedPullTimeBlizz = nil
+    self._btDumped = false
 
     local announceChannel, pullDesc = self:ClassifyPull(pullTimeDiff)
 
@@ -723,7 +880,19 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
         encounterName = encounterName,
         syncSent = false, -- retained for EARLY_PULL_AFTER_PULL compatibility
     }
-    C_Timer.After(self.afterPullDelay, function()
+
+    -- Try to grab the puller from boss targeting RIGHT NOW. Boss target is
+    -- often already populated at ENCOUNTER_START with the tank/puller. If we
+    -- get them immediately, fire the full banner now. Otherwise, polling
+    -- and DAMAGE_METER_COMBAT_SESSION_UPDATED will fire it once resolved.
+    local immediate = self:GetPullerFromBossTarget()
+    if immediate then
+        self.pullContext.puller = immediate
+        self.pullContext.message = pullDesc.." by "..self:FormatPullerName(immediate).."."
+        self:Announce(announceChannel, self.pullContext.message)
+    end
+
+    C_Timer.After(kPollDelays[1], function()
         self:EARLY_PULL_AFTER_PULL(self.id, now, 1)
     end)
 
@@ -932,66 +1101,38 @@ end
 
 function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
     local ctx = self.pullContext
-
     if id ~= self.id or not ctx or pullTime ~= ctx.pullTime then
         return
     end
 
-    if afterPullIndex == 1 then
-        local bestCand, secondCand = self:DetermineBlame(ctx)
-        ctx.bestCand = bestCand
-        ctx.secondCand = secondCand
-        ctx.message = ctx.pullDesc..self:GetBlameDesc(bestCand, secondCand).."."
+    -- Resolve the puller and fire the banner with the full message. Boss
+    -- target is preferred (= tank = actual puller). Damage meter is a fallback
+    -- but biases toward burst-DPS classes due to Midnight's secret-wrapped
+    -- damage values that can't be sorted accurately.
+    local actor = self:GetPullerFromBossTarget() or self:GetPullerFromDamageMeter()
+    if actor then
+        ctx.puller = actor
+        ctx.message = ctx.pullDesc.." by "..self:FormatPullerName(actor).."."
+        self:Announce(ctx.announceChannel, ctx.message)
+        if self.autoPrintDetails then
+            self:PrintPullDetails()
+        end
+        return
+    end
 
+    local nextDelay = kPollDelays[afterPullIndex + 1]
+    if nextDelay then
+        C_Timer.After(nextDelay - (kPollDelays[afterPullIndex] or 0), function()
+            self:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex + 1)
+        end)
+    else
+        -- All polls exhausted; fire banner with no-name fallback.
+        ctx.message = ctx.pullDesc.." by [Unknown]."
+        self:Announce(ctx.announceChannel, ctx.message)
         if self.autoPrintDetails then
             self:PrintPullDetails()
         end
     end
-
-    if not ctx.syncSent then
-        self:Announce(ctx.announceChannel, ctx.message)
-        return
-    end
-
-    -- sync log pass & synchronized announce
-    -- attempts 1-2: announce if we have the highest priority
-    -- attempt 3: announce if we have the highest or second highest priority
-    -- attempt 4: just print the message instead
-    if ctx.announceSeen then
-        return
-    end
-
-    if afterPullIndex == 4 then
-        self:Announce("PRINT", ctx.message)
-        return
-    end
-
-    local now = GetTime()
-    local bestSyncTable
-    local secondSyncTable
-
-    for _, entry in self:IterateLogWindow(self.syncLog, pullTime - 1, now) do
-        local syncTable = self:DeserializeSyncTable(entry.message)
-        if syncTable and self:CheckSyncTableEncounter(syncTable, ctx.encounterID) then
-            if not bestSyncTable or self:CompareSyncTables(bestSyncTable, syncTable) then
-                secondSyncTable = bestSyncTable
-                bestSyncTable = syncTable
-            elseif not secondSyncTable or self:CompareSyncTables(secondSyncTable, syncTable) then
-                secondSyncTable = syncTable
-            end
-        end
-    end
-
-    if (bestSyncTable and self:IsMySyncTable(bestSyncTable))
-    or (afterPullIndex == 3 and secondSyncTable and self:IsMySyncTable(secondSyncTable)) then
-        if self:Announce(ctx.announceChannel, ctx.message) then
-            return
-        end
-    end
-
-    C_Timer.After(self.afterPullDelay, function()
-        self:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex + 1)
-    end)
 end
 
 function EarlyPull:Announce(announceChannel, message)
@@ -1030,13 +1171,13 @@ function EarlyPull:PrintPullDetails()
         ctx.pullTimeDiff and format("%+.3fs", ctx.pullTimeDiff) or "UNTIMED",
         tostring(ctx.announceChannel)))
 
-    if ctx.bestCand then
-        self:PrintCandidateDetails(ctx.bestCand, "Best candidate was ")
-        if ctx.secondCand then
-            self:PrintCandidateDetails(ctx.secondCand, "Next-best candidate was ")
-        end
+    if ctx.puller then
+        local total = ctx.puller.total or ctx.puller.totalAmount or 0
+        self:Print(format("Puller: %s (%s) with %d damage in current session.",
+            tostring(ctx.puller.name), tostring(ctx.puller.classFilename or "?"), total))
     else
-        self:Print("Did not find any candidates to be blamed for pull.")
+        local hasAPI = (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType) and "yes" or "no"
+        self:Print(format("Could not identify puller from damage-meter session (C_DamageMeter available: %s).", hasAPI))
     end
 end
 

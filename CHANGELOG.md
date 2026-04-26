@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0-rc1
+
+Major rewrite for Midnight 12.0+. Replaces the WeakAura's CLEU+threat scoring with the new Blizzard damage-meter API, since `COMBAT_LOG_EVENT_UNFILTERED` is silently disabled inside raid encounters (Midnight's Restricted Addons system).
+
+- **Banner at engage** with full message: `"Boss pulled X seconds early by <Name>."` Resolves the puller name through three layered sources, whichever lands first:
+  1. **Boss target** (`boss1target`) — the tank with current aggro, most accurate signal for who pulled.
+  2. **`DAMAGE_METER_COMBAT_SESSION_UPDATED`** event — fires per damage event server-side; first fire after `ENCOUNTER_START` snapshots the session.
+  3. **Polling** at +0.2s, +0.5s, +1.0s, +2.0s, +3.5s, +5.0s, +7.0s. If all polls fail, banner fires with `"by [Unknown]"`.
+- Removed: CLEU registration, threat-table scanning, boss-target ring buffer, sync coordination across multiple addon instances, all the legacy WA scoring heuristics.
+- Damage values from `C_DamageMeter` are secret-wrapped numbers in restricted state — comparisons via `>` throw silently. The selection wraps each comparison in `pcall` and falls back to `combatSources[1]` when comparisons can't be made.
+- `Auto-Print Details` checkbox now exposes verbose diagnostic output (`BT scan:`, `DM poll:`, `DM selection:`) for debugging future Midnight-API quirks. Disabled by default.
+
+Scope unchanged: only fires inside `instanceType == "raid"`. `/earlypull test` still simulates a banner outside any encounter.
+
 ## 1.0.0-rc4
 
 Scope detection to raid instances and harden the combat log filter:

@@ -124,8 +124,23 @@ function EarlyPull:Init()
     applyDefaults(EarlyPullDB, self.defaults)
     self.db = EarlyPullDB
 
-    -- Pull history. List of records in chronological order; oldest first.
-    self.db.pulls = self.db.pulls or {}
+    -- Pull history grouped into sessions. A session is a contiguous run of
+    -- pulls within the same raid instance; sessions split on >30 min gaps
+    -- or when the player enters a different raid instance.
+    self.db.sessions = self.db.sessions or {}
+
+    -- Migrate legacy flat pulls list (pre-2.2) into a single session.
+    if self.db.pulls and #self.db.pulls > 0 and #self.db.sessions == 0 then
+        local first = self.db.pulls[1]
+        local last = self.db.pulls[#self.db.pulls]
+        table.insert(self.db.sessions, {
+            startTs = first.ts or time(),
+            lastPullTs = last.ts or time(),
+            instanceName = "Imported (pre-2.2)",
+            pulls = self.db.pulls,
+        })
+    end
+    self.db.pulls = nil
 
     for k in pairs(self.defaults) do
         self[k] = self.db[k]
@@ -275,7 +290,38 @@ function EarlyPull:Print(...)
     print("|cff55ffdd"..self.id..":|r", ...)
 end
 
--- Append a pull record to history (capped at 500 entries).
+local kSessionGapSeconds = 30 * 60 -- new session if last pull was >30 min ago
+
+-- Returns the session bucket the next pull belongs to, creating a new one
+-- if the previous session is stale or in a different raid instance.
+function EarlyPull:GetOrCreateSession(ts)
+    self.db.sessions = self.db.sessions or {}
+    local sessions = self.db.sessions
+    local current = sessions[#sessions]
+    local _, instanceName, _, _, _, _, _, instanceID = GetInstanceInfo()
+    if current
+       and (ts - (current.lastPullTs or current.startTs or 0)) < kSessionGapSeconds
+       and current.instanceID == instanceID
+    then
+        current.lastPullTs = ts
+        return current
+    end
+    local s = {
+        startTs = ts,
+        lastPullTs = ts,
+        instanceID = instanceID,
+        instanceName = tostring(instanceName or "?"),
+        pulls = {},
+    }
+    table.insert(sessions, s)
+    -- Cap retained sessions at 50 most recent.
+    while #sessions > 50 do
+        table.remove(sessions, 1)
+    end
+    return s
+end
+
+-- Append a pull record to the appropriate session.
 function EarlyPull:RecordPull(ctx, finalPullerName, finalPullerClass)
     if not (self.db and ctx) then return end
     local record = {
@@ -286,9 +332,11 @@ function EarlyPull:RecordPull(ctx, finalPullerName, finalPullerClass)
         pullerName = finalPullerName,
         pullerClass = finalPullerClass,
     }
-    table.insert(self.db.pulls, record)
-    while #self.db.pulls > 500 do
-        table.remove(self.db.pulls, 1)
+    local session = self:GetOrCreateSession(record.ts)
+    table.insert(session.pulls, record)
+    -- Cap pulls within a single session at 500 to avoid runaway growth.
+    while #session.pulls > 500 do
+        table.remove(session.pulls, 1)
     end
 end
 

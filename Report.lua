@@ -21,27 +21,16 @@ local function classifyDiffShort(diff)
     end
 end
 
--- Returns a multi-line string describing all stored pulls in chronological
--- order, plus an aggregated puller leaderboard.
-function EarlyPull:BuildReport()
-    local pulls = self.db and self.db.pulls
-    if not pulls or #pulls == 0 then
-        return "No pulls recorded yet."
-    end
-
-    local lines = {}
-    lines[#lines + 1] = format("EarlyPull report (%d pulls):", #pulls)
-
-    -- Aggregate per puller.
+local function aggregatePulls(pulls)
     local agg = {}
-    local aggOrder = {}
+    local order = {}
     for _, p in ipairs(pulls) do
         local key = p.pullerName or "[Unknown]"
         local a = agg[key]
         if not a then
             a = {name = key, class = p.pullerClass, count = 0, early = 0, ontime = 0, late = 0, untimed = 0}
             agg[key] = a
-            aggOrder[#aggOrder + 1] = a
+            order[#order + 1] = a
         end
         a.count = a.count + 1
         if not p.pullTimeDiff then
@@ -54,27 +43,63 @@ function EarlyPull:BuildReport()
             a.late = a.late + 1
         end
     end
+    table.sort(order, function(a, b) return a.count > b.count end)
+    return order
+end
 
-    table.sort(aggOrder, function(a, b) return a.count > b.count end)
+local function appendSession(lines, session, indexFromEnd)
+    local startStamp = session.startTs and date("%Y-%m-%d %H:%M", session.startTs) or "?"
+    local endStamp = session.lastPullTs and date("%H:%M", session.lastPullTs) or "?"
+    local pulls = session.pulls or {}
+    lines[#lines + 1] = format("=== Session %d: %s — %s @ %s..%s (%d pulls) ===",
+        indexFromEnd,
+        tostring(session.instanceName or "?"),
+        session.instanceID and ("id="..tostring(session.instanceID)) or "",
+        startStamp, endStamp, #pulls)
 
-    lines[#lines + 1] = "By puller:"
-    for _, a in ipairs(aggOrder) do
+    if #pulls == 0 then return end
+
+    local agg = aggregatePulls(pulls)
+    lines[#lines + 1] = "  By puller:"
+    for _, a in ipairs(agg) do
         local parts = {}
         if a.early   > 0 then parts[#parts + 1] = a.early.." early" end
         if a.late    > 0 then parts[#parts + 1] = a.late.." late" end
         if a.ontime  > 0 then parts[#parts + 1] = a.ontime.." on time" end
         if a.untimed > 0 then parts[#parts + 1] = a.untimed.." untimed" end
-        lines[#lines + 1] = format("  %s: %d (%s)", a.name, a.count,
+        lines[#lines + 1] = format("    %s: %d (%s)", a.name, a.count,
             #parts > 0 and table_concat(parts, ", ") or "—")
     end
 
-    lines[#lines + 1] = "Pulls:"
+    lines[#lines + 1] = "  Pulls:"
     for i, p in ipairs(pulls) do
         local stamp = p.ts and date("%H:%M", p.ts) or "?"
-        lines[#lines + 1] = format("  %d. [%s] %s — %s — %s",
+        lines[#lines + 1] = format("    %d. [%s] %s — %s — %s",
             i, stamp, tostring(p.encounterName),
             classifyDiffShort(p.pullTimeDiff),
             tostring(p.pullerName or "[Unknown]"))
+    end
+end
+
+-- Returns a multi-line string describing stored pulls grouped by raid session,
+-- newest session first.
+function EarlyPull:BuildReport()
+    local sessions = self.db and self.db.sessions
+    if not sessions or #sessions == 0 then
+        return "No pulls recorded yet."
+    end
+
+    local total = 0
+    for _, s in ipairs(sessions) do total = total + #(s.pulls or {}) end
+
+    local lines = {}
+    lines[#lines + 1] = format("EarlyPull report — %d session%s, %d total pulls.",
+        #sessions, #sessions == 1 and "" or "s", total)
+    lines[#lines + 1] = ""
+
+    for i = #sessions, 1, -1 do
+        appendSession(lines, sessions[i], #sessions - i + 1)
+        lines[#lines + 1] = ""
     end
 
     return table_concat(lines, "\n")

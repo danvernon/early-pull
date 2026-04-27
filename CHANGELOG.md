@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0-rc1
+
+Pulls are now grouped into raid sessions instead of one flat list. A session is a contiguous run of pulls inside the same raid instance with no >30 minute gap; entering a different raid or returning after a long break starts a new one.
+
+- Storage moved from `EarlyPullDB.pulls` to `EarlyPullDB.sessions`. Each session record carries `instanceName`, `instanceID`, `startTs`, `lastPullTs`, and its own `pulls[]` array.
+- The pre-2.2 flat history is migrated automatically into a single "Imported (pre-2.2)" session on first load.
+- Report window now shows newest session first, with header `=== Session N: <Instance> @ HH:MM..HH:MM (X pulls) ===`, per-session puller leaderboard, and per-session chronological pull list.
+- 50-session retention cap (oldest sessions drop off when exceeded).
+
 ## 2.1.0-rc1
 
 Adds session-wide pull tracking and a report UI.

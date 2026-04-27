@@ -66,8 +66,8 @@ local function BuildPanel()
         "Decimal places to round the pull time diff.", 1, 3, 1, 2,
         function(v) return tostring(v) end)
     addSlider(category, "pullOnTimeWindow", "On-Time Window (seconds)",
-        "Two-sided window around 0 considered on-time.", 0, 1, 0.005, 0.005,
-        function(v) return format("%.3fs", v) end)
+        "Two-sided window around 0 considered on-time. Pulls within ± this many seconds of the countdown end aren't flagged as early or late.", 0, 1, 0.005, 0.25,
+        function(v) return format("%.2fs", v) end)
     addSlider(category, "maxPullTimeDiff", "Max Pull Time Diff (seconds)",
         "Maximum pull time diff to announce; otherwise the pull is untimed.", 1, 30, 1, 10,
         function(v) return format("%ds", v) end)

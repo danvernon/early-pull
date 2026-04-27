@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.0-rc1
+
+Tighter rules for what counts as an "early" pull, so the addon stops shaming people for noise.
+
+- Default `pullOnTimeWindow` raised from `0.005s` to `0.25s`. Anything within a quarter-second of the countdown end is now classified as on-time, not early or late. The slider in the settings panel reflects the new default.
+- Tank pulls no longer get the early-flag treatment. If the puller is the unit the boss is currently targeting (i.e. the tank by definition), the message is just `"Boss pulled by <Tank>."` regardless of how early it was — tanks are supposed to pull. Late pulls and on-time pulls keep their normal text for everyone.
+- Added `EarlyPull:BuildPullMessage(ctx, actor)` as the single source of truth for the announce string; the boss-target / damage-meter / polling paths all funnel through it.
+
+Note: existing users keep their saved `pullOnTimeWindow` value. To pick up the new 0.25s default, run `/earlypull reset` and `/reload`.
+
 ## 2.2.0-rc1
 
 Pulls are now grouped into raid sessions instead of one flat list. A session is a contiguous run of pulls inside the same raid instance with no >30 minute gap; entering a different raid or returning after a long break starts a new one.

@@ -89,7 +89,7 @@ EarlyPull.defaults = {
     announceLatePull = 1,
     announceUntimedPull = 1,
     pullTimeDiffDecimals = 2,
-    pullOnTimeWindow = 0.005,
+    pullOnTimeWindow = 0.25,
     maxPullTimeDiff = 10,
     syncPriority = 2,
     autoPrintDetails = false,
@@ -810,6 +810,9 @@ function EarlyPull:GetPullerFromBossTarget()
                 name = realm and realm ~= "" and (name.."-"..realm) or name,
                 classFilename = classFile,
                 sourceGUID = safeUnitGUID(unit),
+                -- The boss is targeting them, which by definition means they
+                -- have aggro — they are functionally the tank for this pull.
+                isTank = true,
             }
         end
     end
@@ -905,6 +908,18 @@ function EarlyPull:GetPullerFromDamageMeter()
     return bestActor
 end
 
+-- Build the banner/chat message for a resolved puller. Tanks don't get
+-- the early-flag treatment — they're supposed to pull. Late and untimed
+-- pulls still get normal text for everyone.
+function EarlyPull:BuildPullMessage(ctx, actor)
+    local namePart = " by "..self:FormatPullerName(actor)
+    local diff = ctx.pullTimeDiff
+    if actor.isTank and diff and diff < -self.pullOnTimeWindow then
+        return "Boss pulled"..namePart.."."
+    end
+    return ctx.pullDesc..namePart.."."
+end
+
 function EarlyPull:FormatPullerName(actor)
     if not actor then return "[Unknown]" end
     local ok, formatted = pcall(function()
@@ -957,7 +972,7 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
     local immediate = self:GetPullerFromBossTarget()
     if immediate then
         self.pullContext.puller = immediate
-        self.pullContext.message = pullDesc.." by "..self:FormatPullerName(immediate).."."
+        self.pullContext.message = self:BuildPullMessage(self.pullContext, immediate)
         self:Announce(announceChannel, self.pullContext.message)
         self:RecordPull(self.pullContext, immediate.name, immediate.classFilename)
     end
@@ -1182,7 +1197,7 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
     local actor = self:GetPullerFromBossTarget() or self:GetPullerFromDamageMeter()
     if actor then
         ctx.puller = actor
-        ctx.message = ctx.pullDesc.." by "..self:FormatPullerName(actor).."."
+        ctx.message = self:BuildPullMessage(ctx, actor)
         self:Announce(ctx.announceChannel, ctx.message)
         self:RecordPull(ctx, actor.name, actor.classFilename)
         if self.autoPrintDetails then

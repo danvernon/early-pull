@@ -26,6 +26,9 @@ It scores combat-log events, boss threat tables, and boss targeting in a short w
 - `/earlypull` or `/ep` — open the settings panel
 - `/earlypull test` — simulate a pull banner without needing a raid encounter
 - `/earlypull details` — print the last pull's blame breakdown
+- `/earlypull stats` (alias `report`) — open the pull-history report window
+- `/earlypull report-raid` / `report-party` — post the current report to chat
+- `/earlypull stats-print` — print the report to local chat
 - `/earlypull reset` — wipe SavedVariables (requires `/reload`)
 
 ### Settings

@@ -124,6 +124,9 @@ function EarlyPull:Init()
     applyDefaults(EarlyPullDB, self.defaults)
     self.db = EarlyPullDB
 
+    -- Pull history. List of records in chronological order; oldest first.
+    self.db.pulls = self.db.pulls or {}
+
     for k in pairs(self.defaults) do
         self[k] = self.db[k]
     end
@@ -270,6 +273,23 @@ end
 
 function EarlyPull:Print(...)
     print("|cff55ffdd"..self.id..":|r", ...)
+end
+
+-- Append a pull record to history (capped at 500 entries).
+function EarlyPull:RecordPull(ctx, finalPullerName, finalPullerClass)
+    if not (self.db and ctx) then return end
+    local record = {
+        ts = (GetServerTime and GetServerTime()) or time(),
+        encounterID = ctx.encounterID,
+        encounterName = tostring(ctx.encounterName or "?"),
+        pullTimeDiff = ctx.pullTimeDiff,
+        pullerName = finalPullerName,
+        pullerClass = finalPullerClass,
+    }
+    table.insert(self.db.pulls, record)
+    while #self.db.pulls > 500 do
+        table.remove(self.db.pulls, 1)
+    end
 end
 
 function EarlyPull:AdvanceLog(log)
@@ -761,6 +781,7 @@ function EarlyPull:DAMAGE_METER_COMBAT_SESSION_UPDATED()
     ctx.puller = actor
     ctx.message = ctx.pullDesc.." by "..self:FormatPullerName(actor).."."
     self:Announce(ctx.announceChannel, ctx.message)
+    self:RecordPull(ctx, actor.name, actor.classFilename)
     if self.autoPrintDetails then
         self:PrintPullDetails()
     end
@@ -890,6 +911,7 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
         self.pullContext.puller = immediate
         self.pullContext.message = pullDesc.." by "..self:FormatPullerName(immediate).."."
         self:Announce(announceChannel, self.pullContext.message)
+        self:RecordPull(self.pullContext, immediate.name, immediate.classFilename)
     end
 
     C_Timer.After(kPollDelays[1], function()
@@ -1114,6 +1136,7 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
         ctx.puller = actor
         ctx.message = ctx.pullDesc.." by "..self:FormatPullerName(actor).."."
         self:Announce(ctx.announceChannel, ctx.message)
+        self:RecordPull(ctx, actor.name, actor.classFilename)
         if self.autoPrintDetails then
             self:PrintPullDetails()
         end
@@ -1129,6 +1152,7 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
         -- All polls exhausted; fire banner with no-name fallback.
         ctx.message = ctx.pullDesc.." by [Unknown]."
         self:Announce(ctx.announceChannel, ctx.message)
+        self:RecordPull(ctx, nil, nil)
         if self.autoPrintDetails then
             self:PrintPullDetails()
         end

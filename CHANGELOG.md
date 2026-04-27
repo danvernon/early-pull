@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.0-rc1
+
+Adds session-wide pull tracking and a report UI.
+
+- Each pull (boss, timing, puller name and class) is recorded to `EarlyPullDB.pulls` and persists across reloads/relogs. Capped at 500 most recent entries.
+- New report window — open with `/earlypull stats` or `/earlypull report`. Shows:
+  - Per-puller leaderboard: count of pulls broken down into early / on time / late / untimed.
+  - Chronological list of every recorded pull with timestamp.
+  - Buttons: **Report to Raid**, **Report to Party**, **Refresh**, **Clear**, **Close**.
+  - The text area is selectable so users can copy the report out manually.
+- New slash forms: `/earlypull report-raid`, `/earlypull report-party`, `/earlypull stats-print` (prints the report locally without opening the window).
+- Posting to chat respects combat lockdown — the addon refuses to post and prints a notice instead. Out-of-combat posting works normally.
+
 ## 2.0.0-rc1
 
 Major rewrite for Midnight 12.0+. Replaces the WeakAura's CLEU+threat scoring with the new Blizzard damage-meter API, since `COMBAT_LOG_EVENT_UNFILTERED` is silently disabled inside raid encounters (Midnight's Restricted Addons system).

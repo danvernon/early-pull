@@ -1,51 +1,64 @@
 # EarlyPull
 
-Announces who pulled the boss and how early/late relative to the DBM/Blizzard pull timer.
+A small World of Warcraft Midnight (Interface 120001+) addon that calls out who pulled a boss and how early or late it was. Built as a standalone replacement for the [Early Pull WeakAura](https://wago.io/V4JIxqNQ4), since Midnight's Restricted Addons system silently disables `COMBAT_LOG_EVENT_UNFILTERED` inside raid encounters and the WA stopped working as a result.
 
-Ported from the "Early Pull" WeakAura (https://wago.io/V4JIxqNQ4) to a standalone addon for Midnight (Interface 120001+).
+## What you get
+
+- **Banner at engage**: a center-screen raid-warning-style notification with timing and (when resolvable) the puller's name. Examples:
+  - `"Boss pulled by <Tank>."` (tank pulls — no early flag, since tanks are supposed to pull)
+  - `"Boss pulled 0.42 seconds early by <Name>."`
+  - `"Boss pulled on time by <Name>."`
+  - `"Boss pulled 0.65 seconds late by <Name>."`
+  - `"Boss pulled by <Name>."` (no countdown was active, or pull was outside the configured timing window)
+- **Pull history**: every announced pull is recorded into a session bucket (one per raid night per instance). Open the report window with `/earlypull stats` to see a per-puller leaderboard and chronological list, plus buttons to post the report to RAID or PARTY chat.
 
 ## Install
 
-1. Unzip the release archive into your `World of Warcraft\_retail_\Interface\AddOns\` folder. You should end up with `...\AddOns\EarlyPull\` containing `EarlyPull.toc`, `Core.lua`, `Options.lua`.
-2. At the character-select screen, click **AddOns** and make sure **EarlyPull** is enabled.
-3. Log in. You'll see no UI; the addon just listens for pulls.
+- **CurseForge**: search for "EarlyPull" in the CurseForge app, or download from the [project page](https://www.curseforge.com/wow/addons/early-pull).
+- **Manual**: grab the latest release zip from [GitHub Releases](https://github.com/danvernon/early-pull/releases) and unzip into `World of Warcraft\_retail_\Interface\AddOns\` so you end up with `...\AddOns\EarlyPull\`.
 
-## Usage
+Reload your UI / restart WoW. There's no in-world setup; the addon just listens for raid encounters.
 
-When someone in your raid triggers a Blizzard pull countdown (via `/readycheck` or DBM/BigWigs pull timer) and the encounter then starts, EarlyPull classifies the pull and announces the result:
+## How puller attribution works
 
-- *"Boss pulled 2.15 seconds early by <Name> <Spell>."*
-- *"Boss pulled on time by <Name> <Spell>."*
-- *"Boss pulled 0.80 seconds late by <Name>."*
-- *"Boss pulled by <Name>."* (no countdown / outside the timing window)
+Midnight blocks the traditional combat-log path inside raid encounters, so EarlyPull resolves the puller from three layered sources, whichever lands first:
 
-It scores combat-log events, boss threat tables, and boss targeting in a short window around the pull to identify the most likely culprit. Pet pulls attribute to the pet's owner.
+1. **Boss target** (`boss1target` … `boss8target`) — whichever player the boss is currently targeting. Most accurate for tank pulls and used as the *isTank* signal that exempts tanks from the early flag.
+2. **`DAMAGE_METER_COMBAT_SESSION_UPDATED`** — fires per damage event server-side; the first fire after `ENCOUNTER_START` snapshots the active damage-meter session.
+3. **Polling** — `C_DamageMeter.GetCombatSessionFromType(...)` is queried at `+0.2s, +0.5s, +1.0s, +2.0s, +3.5s, +5.0s, +7.0s` after engage. The actor with the highest damage so far is picked. Damage values are secret-wrapped by Midnight in restricted state, so comparisons are wrapped in `pcall` and the addon falls back to the first actor in the list when comparisons can't be made.
 
-### Slash commands
+If none of those resolve a puller within seven seconds, the banner fires anyway with `"by [Unknown]"` so the timing info isn't lost.
+
+## Slash commands
 
 - `/earlypull` or `/ep` — open the settings panel
-- `/earlypull test` — simulate a pull banner without needing a raid encounter
-- `/earlypull details` — print the last pull's blame breakdown
-- `/earlypull stats` (alias `report`) — open the pull-history report window
-- `/earlypull report-raid` / `report-party` — post the current report to chat
+- `/earlypull test` — simulate a banner without needing a raid encounter
+- `/earlypull stats` (alias: `report`) — open the pull-history report window
+- `/earlypull report-raid` / `report-party` — post the current report to chat (out of combat only)
 - `/earlypull stats-print` — print the report to local chat
+- `/earlypull details` — print the last pull's diagnostic info
 - `/earlypull reset` — wipe SavedVariables (requires `/reload`)
 
-### Settings
+## Settings
 
 Open via `/earlypull` or Game Menu → Options → AddOns → EarlyPull.
 
-- **Early / On-Time / Late / Untimed Pull** — how to display the pull: **Banner** (center-screen raid-warning style, the default), **Chat** (local chat line), or **None**. Display is local-only — the addon does not broadcast to chat, so nobody else sees the call-out unless they also run EarlyPull.
+- **Early / On-Time / Late / Untimed Pull** — how each timing class is displayed: **Banner** (center-screen, default), **Chat** (local chat line), or **None**.
 - **Pull Time Diff Decimals** — how many decimals in the seconds value.
-- **On-Time Window (seconds)** — ± this much from the timer is considered "on time".
-- **Max Pull Time Diff (seconds)** — if the actual pull is more than this far from the timer, the pull is treated as untimed.
-- **Auto-Print Details** — also print blame scores to local chat after every pull.
+- **On-Time Window (seconds)** — ± this many seconds is considered on-time. Default `0.25s`.
+- **Max Pull Time Diff (seconds)** — if the actual pull is further off than this, the pull is classified as *untimed* instead of early/late.
+- **Auto-Print Details** — verbose diagnostic output (boss-target scan, damage-meter session contents, selection results). Off by default; useful for troubleshooting.
 
-## Known limitations on Midnight (12.0+)
+## Limitations on Midnight
 
-- Blame attribution falls back to character name when player GUIDs come back as opaque "secret" values. The banner still names the right player but may omit the spell link in edge cases.
-- Display is local-only by design. Midnight's addon-chat restrictions in instanced combat (and chat-tab filtering of the sender's own SAY messages) make a reliable broadcast announcement impractical, so EarlyPull shows the notification to the user running it. Raid members who also install the addon each get their own banner.
+- **Display is local-only.** Midnight blocks addon-initiated chat inside restricted combat, so EarlyPull doesn't broadcast — each user running the addon sees their own banner. Use the report window's *Report to Raid* button between pulls to share session stats.
+- **Puller attribution can be approximate.** If `boss1target` isn't populated at engage and the damage-meter session has multiple actors, the highest-damage heuristic biases toward burst-DPS classes (Evokers, Mages, Warlocks). Tank pulls resolved via boss target are reliable.
+- **Raid scope.** The detection logic only fires when `IsInInstance()` returns `"raid"`. Dungeons, scenarios, world bosses, and timewalking don't trigger it. `/earlypull test` works anywhere for smoke-testing the banner display.
 
 ## Credits
 
-Original "Early Pull" WeakAura by its wago.io author. This is a port, not a new work — all scoring heuristics and pull-detection logic come from the WA.
+Original "Early Pull" WeakAura — pull-detection concept and timing logic come from there. The Midnight port re-implements blame attribution from scratch on the new `C_DamageMeter` API since the WA's CLEU+threat scoring no longer functions in restricted state.
+
+## License
+
+[MIT](LICENSE).

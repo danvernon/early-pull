@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.0-rc1
+
+The report window and chat report no longer call out tanks. Tank pulls (resolved via the boss-target signal) are still recorded in storage with `pullerIsTank=true`, but the per-puller leaderboard and per-pull list filter them out. The header notes how many tank pulls were hidden so the data isn't completely invisible.
+
+- `RecordPull(ctx, actor)` now stores `pullerIsTank` on each record.
+- `Report.BuildReport` filters tank pulls before building the leaderboard. Session header reads e.g. `"Session 1: Manaforge Omega @ 21:05..23:14 (8 non-tank pulls, 4 tank pulls hidden)"`.
+- Top-line summary updated similarly: `"3 sessions, 22 non-tank pulls (11 tank pulls hidden)"`.
+
+Existing pulls in saved history don't have the `pullerIsTank` flag, so they default to false and stay visible. Going forward, only newly recorded pulls get the tank exemption.
+
 ## 2.3.0-rc1
 
 Tighter rules for what counts as an "early" pull, so the addon stops shaming people for noise.

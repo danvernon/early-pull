@@ -322,15 +322,16 @@ function EarlyPull:GetOrCreateSession(ts)
 end
 
 -- Append a pull record to the appropriate session.
-function EarlyPull:RecordPull(ctx, finalPullerName, finalPullerClass)
+function EarlyPull:RecordPull(ctx, actor)
     if not (self.db and ctx) then return end
     local record = {
         ts = (GetServerTime and GetServerTime()) or time(),
         encounterID = ctx.encounterID,
         encounterName = tostring(ctx.encounterName or "?"),
         pullTimeDiff = ctx.pullTimeDiff,
-        pullerName = finalPullerName,
-        pullerClass = finalPullerClass,
+        pullerName = actor and actor.name or nil,
+        pullerClass = actor and actor.classFilename or nil,
+        pullerIsTank = actor and actor.isTank or false,
     }
     local session = self:GetOrCreateSession(record.ts)
     table.insert(session.pulls, record)
@@ -832,7 +833,7 @@ function EarlyPull:DAMAGE_METER_COMBAT_SESSION_UPDATED()
     ctx.puller = actor
     ctx.message = ctx.pullDesc.." by "..self:FormatPullerName(actor).."."
     self:Announce(ctx.announceChannel, ctx.message)
-    self:RecordPull(ctx, actor.name, actor.classFilename)
+    self:RecordPull(ctx, actor)
     if self.autoPrintDetails then
         self:PrintPullDetails()
     end
@@ -974,7 +975,7 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
         self.pullContext.puller = immediate
         self.pullContext.message = self:BuildPullMessage(self.pullContext, immediate)
         self:Announce(announceChannel, self.pullContext.message)
-        self:RecordPull(self.pullContext, immediate.name, immediate.classFilename)
+        self:RecordPull(self.pullContext, immediate)
     end
 
     C_Timer.After(kPollDelays[1], function()
@@ -1199,7 +1200,7 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
         ctx.puller = actor
         ctx.message = self:BuildPullMessage(ctx, actor)
         self:Announce(ctx.announceChannel, ctx.message)
-        self:RecordPull(ctx, actor.name, actor.classFilename)
+        self:RecordPull(ctx, actor)
         if self.autoPrintDetails then
             self:PrintPullDetails()
         end
@@ -1215,7 +1216,7 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
         -- All polls exhausted; fire banner with no-name fallback.
         ctx.message = ctx.pullDesc.." by [Unknown]."
         self:Announce(ctx.announceChannel, ctx.message)
-        self:RecordPull(ctx, nil, nil)
+        self:RecordPull(ctx, nil)
         if self.autoPrintDetails then
             self:PrintPullDetails()
         end

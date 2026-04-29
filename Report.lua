@@ -50,12 +50,27 @@ end
 local function appendSession(lines, session, indexFromEnd)
     local startStamp = session.startTs and date("%Y-%m-%d %H:%M", session.startTs) or "?"
     local endStamp = session.lastPullTs and date("%H:%M", session.lastPullTs) or "?"
-    local pulls = session.pulls or {}
-    lines[#lines + 1] = format("=== Session %d: %s — %s @ %s..%s (%d pulls) ===",
+    local rawPulls = session.pulls or {}
+
+    -- Filter out tank pulls — they're supposed to pull, not what we want
+    -- to call out. Tank pulls are still in storage with pullerIsTank=true,
+    -- the leaderboard and per-pull list just hide them.
+    local pulls = {}
+    local tankPullCount = 0
+    for _, p in ipairs(rawPulls) do
+        if p.pullerIsTank then
+            tankPullCount = tankPullCount + 1
+        else
+            pulls[#pulls + 1] = p
+        end
+    end
+
+    lines[#lines + 1] = format("=== Session %d: %s — %s @ %s..%s (%d non-tank pulls%s) ===",
         indexFromEnd,
         tostring(session.instanceName or "?"),
         session.instanceID and ("id="..tostring(session.instanceID)) or "",
-        startStamp, endStamp, #pulls)
+        startStamp, endStamp, #pulls,
+        tankPullCount > 0 and format(", %d tank pulls hidden", tankPullCount) or "")
 
     if #pulls == 0 then return end
 
@@ -90,11 +105,17 @@ function EarlyPull:BuildReport()
     end
 
     local total = 0
-    for _, s in ipairs(sessions) do total = total + #(s.pulls or {}) end
+    local nonTank = 0
+    for _, s in ipairs(sessions) do
+        for _, p in ipairs(s.pulls or {}) do
+            total = total + 1
+            if not p.pullerIsTank then nonTank = nonTank + 1 end
+        end
+    end
 
     local lines = {}
-    lines[#lines + 1] = format("EarlyPull report — %d session%s, %d total pulls.",
-        #sessions, #sessions == 1 and "" or "s", total)
+    lines[#lines + 1] = format("EarlyPull report — %d session%s, %d non-tank pulls (%d tank pulls hidden).",
+        #sessions, #sessions == 1 and "" or "s", nonTank, total - nonTank)
     lines[#lines + 1] = ""
 
     for i = #sessions, 1, -1 do

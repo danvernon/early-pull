@@ -154,26 +154,11 @@ function EarlyPull:BuildLeaderboard()
     return table_concat(lines, "\n")
 end
 
--- Returns a multi-line string with the leaderboard at the top and per-session
--- details below for the in-game window.
+-- Window report = leaderboard only. Per-session detail was noisy and added
+-- nothing the leaderboard didn't already convey; the chat post is the same
+-- output, just sent to a channel.
 function EarlyPull:BuildReport()
-    local sessions = self.db and self.db.sessions
-    if not sessions or #sessions == 0 then
-        return "No pulls recorded yet."
-    end
-
-    local lines = {}
-    lines[#lines + 1] = self:BuildLeaderboard()
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "Sessions (newest first):"
-    lines[#lines + 1] = ""
-
-    for i = #sessions, 1, -1 do
-        appendSession(lines, sessions[i], #sessions - i + 1)
-        lines[#lines + 1] = ""
-    end
-
-    return table_concat(lines, "\n")
+    return self:BuildLeaderboard()
 end
 
 -- ---------------------------------------------------------------------------

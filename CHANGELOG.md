@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.1-rc1
+
+Drop the per-session detail block from the report window. The window now shows just the leaderboard — same output as the *Report to Raid* button posts to chat. The session breakdown was noisy and didn't convey anything the leaderboard didn't already.
+
 ## 2.5.0-rc1
 
 Reformat the report to look like Details!'s damage report — Details-style ranked leaderboard front and center, sessions below.

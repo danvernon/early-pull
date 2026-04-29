@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.5.0-rc1
+
+Reformat the report to look like Details!'s damage report — Details-style ranked leaderboard front and center, sessions below.
+
+- New `BuildLeaderboard()` function aggregates every non-tank pull across all stored sessions and renders a most-to-least ranked list:
+  ```
+  EarlyPull Pull Report — 12 non-tank pulls (5 tank pulls hidden)
+   1. Stoley-TarrenMill   3   25.0%  (3 early)
+   2. Treaderzwl-Kazzak   2   16.7%  (1 early, 1 late)
+   3. [Unknown]           2   16.7%  (1 early, 1 untimed)
+   4. Zheenevo            1    8.3%  (1 early)
+   ...
+  ```
+- The in-game window leads with the leaderboard, then shows the per-session breakdown below for users who want to dig in.
+- The **Report to Raid** / **Report to Party** buttons now post only the leaderboard — concise, ranked, no per-session noise. Drops chat output from ~30 lines per session to ~10 total.
+- Names are padded to align the count and percentage columns regardless of name length.
+
 ## 2.4.0-rc1
 
 The report window and chat report no longer call out tanks. Tank pulls (resolved via the boss-target signal) are still recorded in storage with `pullerIsTank=true`, but the per-puller leaderboard and per-pull list filter them out. The header notes how many tank pulls were hidden so the data isn't completely invisible.

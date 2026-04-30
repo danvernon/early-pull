@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.6.0-rc1
+
+Report restructured to mirror how Details! shows segments — current raid only, broken down by boss.
+
+- **Scope:** the leaderboard now shows only the current session (or the most recent one if you're not in a raid). Previously it aggregated across every saved session — pugs, old raid nights, ex-teammates — which made it noisy.
+- **Per-boss segments:** within the current session, the report now contains an *Overall* leaderboard at the top followed by a sub-leaderboard per boss encounter, in the order they were first pulled. Same raid night, separated by fight, like Details' segment list.
+- **Header shows the instance:** `"EarlyPull Pull Report — Manaforge Omega — 12 non-tank pulls"`.
+- All historical data is still retained in `EarlyPullDB.sessions` — only the *display* is scoped. Nothing is deleted.
+
+If a recently-pulled player is missing from the leaderboard (e.g. someone who appeared in a banner but doesn't show up in the report), they were likely affected by the v2.5.1 secret-string crash that prevented their name from being recorded properly — fixed in v2.5.2 onward.
+
 ## 2.5.2-rc1
 
 Critical fix for an in-raid crash spam reported by a user (`Core.lua:807: attempt to compare local 'name' (a secret string value, while execution tainted by 'EarlyPull')`). The error fired ~4000 times per encounter when the boss-target `UnitName()` returned a secret-wrapped string.

@@ -96,48 +96,40 @@ local function appendSession(lines, session, indexFromEnd)
     end
 end
 
--- Build a flat array of every non-tank pull across all stored sessions.
-local function collectAllNonTankPulls(sessions)
-    local out = {}
-    for _, s in ipairs(sessions) do
-        for _, p in ipairs(s.pulls or {}) do
-            if not p.pullerIsTank then
-                out[#out + 1] = p
+-- Pick the session the leaderboard should display. Prefers the most recent
+-- session that matches the current instance; falls back to the most recent
+-- session overall if the player is not currently in one.
+local function resolveScopeSession(sessions)
+    if #sessions == 0 then return nil end
+    local _, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
+    if instanceID and instanceType and instanceType ~= "none" then
+        for i = #sessions, 1, -1 do
+            if sessions[i].instanceID == instanceID then
+                return sessions[i]
             end
         end
     end
-    return out
+    return sessions[#sessions]
 end
 
--- Returns the leaderboard portion of the report — Details-style ranked list
--- of pullers across all stored sessions, sorted most-to-least.
-function EarlyPull:BuildLeaderboard()
-    local sessions = self.db and self.db.sessions or {}
-    local pulls = collectAllNonTankPulls(sessions)
-    local total = #pulls
-    if total == 0 then
-        return "EarlyPull Pull Report — no non-tank pulls recorded."
+-- Render a ranked leaderboard for a single set of pulls.
+local function renderLeaderboard(pulls, headerLine)
+    local lines = {}
+    lines[#lines + 1] = headerLine
+
+    if #pulls == 0 then
+        lines[#lines + 1] = "  (no non-tank pulls)"
+        return lines
     end
 
     local agg = aggregatePulls(pulls)
+    local total = #pulls
 
-    -- Pad name column to align the count + percent.
     local nameWidth = 0
     for _, a in ipairs(agg) do
         if #a.name > nameWidth then nameWidth = #a.name end
     end
     if nameWidth > 32 then nameWidth = 32 end
-
-    local lines = {}
-    local tankHidden = 0
-    for _, s in ipairs(sessions) do
-        for _, p in ipairs(s.pulls or {}) do
-            if p.pullerIsTank then tankHidden = tankHidden + 1 end
-        end
-    end
-    lines[#lines + 1] = format("EarlyPull Pull Report — %d non-tank pull%s%s",
-        total, total == 1 and "" or "s",
-        tankHidden > 0 and format(" (%d tank pulls hidden)", tankHidden) or "")
 
     for i, a in ipairs(agg) do
         local pct = total > 0 and (a.count / total * 100) or 0
@@ -149,6 +141,65 @@ function EarlyPull:BuildLeaderboard()
         local breakStr = #breakdown > 0 and ("("..table_concat(breakdown, ", ")..")") or ""
         lines[#lines + 1] = format("%2d. %-"..nameWidth.."s  %3d   %5.1f%%  %s",
             i, a.name, a.count, pct, breakStr)
+    end
+    return lines
+end
+
+-- Returns the leaderboard for the current session, with an Overall section
+-- on top and per-boss sub-leaderboards below — mirroring how Details!
+-- separates segments within one raid night.
+function EarlyPull:BuildLeaderboard()
+    local sessions = self.db and self.db.sessions or {}
+    local session = resolveScopeSession(sessions)
+    if not session then
+        return "EarlyPull Pull Report — no non-tank pulls recorded."
+    end
+
+    local scopeName = session.instanceName or "?"
+
+    -- Filter tanks out and group by encounter (preserving first-seen order).
+    local nonTank = {}
+    local tankHidden = 0
+    local byEncounter = {}
+    local encounterOrder = {}
+    for _, p in ipairs(session.pulls or {}) do
+        if p.pullerIsTank then
+            tankHidden = tankHidden + 1
+        else
+            nonTank[#nonTank + 1] = p
+            local key = tostring(p.encounterName or "?")
+            local bucket = byEncounter[key]
+            if not bucket then
+                bucket = {name = key, pulls = {}}
+                byEncounter[key] = bucket
+                encounterOrder[#encounterOrder + 1] = bucket
+            end
+            bucket.pulls[#bucket.pulls + 1] = p
+        end
+    end
+
+    if #nonTank == 0 then
+        return format("EarlyPull Pull Report — %s — no non-tank pulls recorded yet.",
+            tostring(scopeName))
+    end
+
+    local lines = {}
+    local header = format("EarlyPull Pull Report — %s — %d non-tank pull%s%s",
+        tostring(scopeName), #nonTank, #nonTank == 1 and "" or "s",
+        tankHidden > 0 and format(" (%d tank pulls hidden)", tankHidden) or "")
+    for _, line in ipairs(renderLeaderboard(nonTank, header)) do
+        lines[#lines + 1] = line
+    end
+
+    if #encounterOrder > 1 then
+        for _, bucket in ipairs(encounterOrder) do
+            lines[#lines + 1] = ""
+            local sectionHeader = format("== %s — %d pull%s ==",
+                bucket.name, #bucket.pulls, #bucket.pulls == 1 and "" or "s")
+            for _, line in ipairs(renderLeaderboard(bucket.pulls, sectionHeader)) do
+                lines[#lines + 1] = line
+            end
+        end
     end
 
     return table_concat(lines, "\n")

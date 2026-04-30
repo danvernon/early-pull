@@ -324,13 +324,20 @@ end
 -- Append a pull record to the appropriate session.
 function EarlyPull:RecordPull(ctx, actor)
     if not (self.db and ctx) then return end
+    -- Sanitize fields that come from arbitrary API surfaces. Storing or
+    -- comparing a secret string later (e.g. as a leaderboard key) crashes,
+    -- so we drop secrecy at the storage boundary.
+    local rawName = actor and actor.name
+    local rawClass = actor and actor.classFilename
+    local pullerName = (rawName and not issecretvalue(rawName)) and rawName or nil
+    local pullerClass = (rawClass and not issecretvalue(rawClass)) and rawClass or nil
     local record = {
         ts = (GetServerTime and GetServerTime()) or time(),
         encounterID = ctx.encounterID,
         encounterName = tostring(ctx.encounterName or "?"),
         pullTimeDiff = ctx.pullTimeDiff,
-        pullerName = actor and actor.name or nil,
-        pullerClass = actor and actor.classFilename or nil,
+        pullerName = pullerName,
+        pullerClass = pullerClass,
         pullerIsTank = actor and actor.isTank or false,
     }
     local session = self:GetOrCreateSession(record.ts)
@@ -799,17 +806,25 @@ function EarlyPull:GetPullerFromBossTarget()
         local unit = "boss"..i.."target"
         local exists = UnitExists(unit)
         local isPlayer = exists and UnitIsPlayer(unit)
-        local name, realm = (exists and UnitName(unit)) or nil, nil
+        local name, realm
+        if exists then
+            name, realm = UnitName(unit)
+        end
         if exists and self.autoPrintDetails and not self._btDumped then
             self._btDumped = true
             self:Print(format("BT scan: %s exists=%s isPlayer=%s name=%s",
                 unit, tostring(exists), tostring(isPlayer), tostring(name)))
         end
-        if isPlayer and name and name ~= UNKNOWN and not issecretvalue(name) then
+        -- Order matters: issecretvalue check MUST come before the ~= comparison.
+        -- Lua short-circuits left to right, and comparing a secret string to a
+        -- regular string throws "attempt to compare ... a secret string value".
+        if isPlayer and name and not issecretvalue(name) and name ~= UNKNOWN then
             local _, classFile = UnitClass(unit)
+            local safeRealm = realm and not issecretvalue(realm) and realm ~= "" and realm or nil
+            local fullName = safeRealm and (name.."-"..safeRealm) or name
             return {
-                name = realm and realm ~= "" and (name.."-"..realm) or name,
-                classFilename = classFile,
+                name = fullName,
+                classFilename = (classFile and not issecretvalue(classFile)) and classFile or nil,
                 sourceGUID = safeUnitGUID(unit),
                 -- The boss is targeting them, which by definition means they
                 -- have aggro — they are functionally the tank for this pull.
@@ -924,7 +939,9 @@ end
 function EarlyPull:FormatPullerName(actor)
     if not actor then return "[Unknown]" end
     local ok, formatted = pcall(function()
-        local name = actor.name or "[Unknown]"
+        -- Strip secret-string values before they touch format() or string ops.
+        local rawName = actor.name
+        local name = (rawName and not issecretvalue(rawName)) and rawName or "[Unknown]"
         local class = safeKey(actor.classFilename)
         if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
             local c = RAID_CLASS_COLORS[class]

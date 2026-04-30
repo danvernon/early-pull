@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.2-rc1
+
+Critical fix for an in-raid crash spam reported by a user (`Core.lua:807: attempt to compare local 'name' (a secret string value, while execution tainted by 'EarlyPull')`). The error fired ~4000 times per encounter when the boss-target `UnitName()` returned a secret-wrapped string.
+
+- `GetPullerFromBossTarget` reordered its `if` so `issecretvalue(name)` runs *before* the `name ~= UNKNOWN` comparison. Lua short-circuits left-to-right, and comparing a secret string to a regular string throws — the secrecy check has to come first.
+- Also fixed a subtle precedence bug in the same function: `local name, realm = (exists and UnitName(unit)) or nil, nil` was always assigning `nil` to `realm` because of operator precedence. Replaced with an explicit `if exists then ... end` block so `realm` actually gets the second return from `UnitName`.
+- `RecordPull` now strips secret strings from `actor.name` and `actor.classFilename` before storing, so old records can't blow up later when they're aggregated into the leaderboard.
+- `FormatPullerName` does the same secrecy filter on the input name before passing it to `format()`.
+
 ## 2.5.1-rc1
 
 Drop the per-session detail block from the report window. The window now shows just the leaderboard — same output as the *Report to Raid* button posts to chat. The session breakdown was noisy and didn't convey anything the leaderboard didn't already.

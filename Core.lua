@@ -841,13 +841,14 @@ end
 -- a much better attribution than waiting for the +0.5s polling tick.
 function EarlyPull:DAMAGE_METER_COMBAT_SESSION_UPDATED()
     local ctx = self.pullContext
-    if not ctx or ctx.puller then return end
+    if not ctx or ctx.recorded then return end
     -- Prefer boss target (= tank = puller) over damage-meter heuristic.
     local actor = self:GetPullerFromBossTarget() or self:GetPullerFromDamageMeter()
     if not actor then return end
     ctx.puller = actor
-    ctx.message = ctx.pullDesc.." by "..self:FormatPullerName(actor).."."
+    ctx.message = self:BuildPullMessage(ctx, actor)
     self:Announce(ctx.announceChannel, ctx.message)
+    ctx.recorded = true
     self:RecordPull(ctx, actor)
     if self.autoPrintDetails then
         self:PrintPullDetails()
@@ -992,6 +993,7 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
         self.pullContext.puller = immediate
         self.pullContext.message = self:BuildPullMessage(self.pullContext, immediate)
         self:Announce(announceChannel, self.pullContext.message)
+        self.pullContext.recorded = true
         self:RecordPull(self.pullContext, immediate)
     end
 
@@ -1208,6 +1210,15 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
         return
     end
 
+    -- If RecordPull has already fired for this pull (via the immediate
+    -- boss-target check at ENCOUNTER_START, the DAMAGE_METER_COMBAT_SESSION_UPDATED
+    -- handler, or a previous polling tick) we're done. Without this guard
+    -- each subsequent poll would re-resolve and record again, producing
+    -- 2-4 duplicate entries per actual pull.
+    if ctx.recorded then
+        return
+    end
+
     -- Resolve the puller and fire the banner with the full message. Boss
     -- target is preferred (= tank = actual puller). Damage meter is a fallback
     -- but biases toward burst-DPS classes due to Midnight's secret-wrapped
@@ -1217,6 +1228,7 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
         ctx.puller = actor
         ctx.message = self:BuildPullMessage(ctx, actor)
         self:Announce(ctx.announceChannel, ctx.message)
+        ctx.recorded = true
         self:RecordPull(ctx, actor)
         if self.autoPrintDetails then
             self:PrintPullDetails()
@@ -1230,7 +1242,8 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
             self:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex + 1)
         end)
     else
-        -- All polls exhausted; fire banner with no-name fallback.
+        -- All polls exhausted with no resolution; record once as [Unknown].
+        ctx.recorded = true
         ctx.message = ctx.pullDesc.." by [Unknown]."
         self:Announce(ctx.announceChannel, ctx.message)
         self:RecordPull(ctx, nil)

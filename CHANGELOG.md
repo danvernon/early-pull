@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.1-rc1
+
+Critical fix: each pull was being recorded 2-4 times. A user reported a session of 1-pulled bosses showing as 3-4 pulls each in the report.
+
+The puller-resolution chain (`ENCOUNTER_START` immediate boss-target check → `DAMAGE_METER_COMBAT_SESSION_UPDATED` event → polling at +0.2s/+0.5s/+1.0s/...) had no shared "already done" flag. Each layer that successfully resolved called `RecordPull`, so a pull resolved at `ENCOUNTER_START` would also be re-resolved and re-recorded by the polling tick at +0.2s, and again at +0.5s, etc.
+
+Added `ctx.recorded` as the single source of truth — every resolution path checks it before doing work and sets it after `RecordPull` runs. Pulls now record exactly once.
+
+Pre-existing duplicates in `EarlyPullDB` are still there. To clean up, click **Clear** in the report window or run `/earlypull reset` and `/reload`.
+
 ## 2.6.0-rc1
 
 Report restructured to mirror how Details! shows segments — current raid only, broken down by boss.

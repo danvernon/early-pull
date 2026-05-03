@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.3-rc1
+
+Strip developer-only test scaffolding (`SeedTestReport`, `ClearTestSessions`, and the `/earlypull test-report` / `clear-test` slash forms) that accidentally shipped in the v2.6.2-rc1 zip. No behavior change for users — those commands were intended to stay in the local working tree only and were never documented.
+
 ## 2.6.2-rc1
 
 Three bug fixes after a user reported every pull resolving to `[Unknown]` and the leaderboard header reading "raid" instead of the actual instance name.

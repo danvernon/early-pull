@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.2-rc1
+
+Three bug fixes after a user reported every pull resolving to `[Unknown]` and the leaderboard header reading "raid" instead of the actual instance name.
+
+- **Names regression from v2.5.2 reverted.** v2.5.2 added an `issecretvalue` filter at write time in `RecordPull`, intending to prevent secret strings from sneaking into storage. But the WoW SavedVariables serializer normalizes secret-wrapped strings to plain text on disk anyway, so the filter was actually *preventing* names from accumulating cross-session. Reverted: names are now stored as-is. The same secret check moved to read-time in `aggregatePulls` so any in-session secrets are rendered as `[Unknown]` without crashing the leaderboard table.
+- **Instance name was always "raid".** `local _, instanceName, _, _, _, _, _, instanceID = GetInstanceInfo()` was destructuring with the leading underscore in the wrong slot, capturing `instanceType` ("raid") as the name. Fixed: now correctly captures the first return as `instanceName`. Header reads e.g. `"Manaforge Omega"` instead of `"raid"`.
+- **`[Unknown]` no longer rendered in someone's class color.** When the puller's name was unresolvable but the class was readable, `FormatPullerName` returned `[Unknown]` wrapped in the class color escape — visually misleading because it looked like a real player. Now if the name is missing or secret, returns plain `[Unknown]` without coloring.
+
+Existing saved data (with nil names from v2.5.2-era pulls) won't retroactively get names. Going forward, pulls record names properly again.
+
 ## 2.6.1-rc1
 
 Critical fix: each pull was being recorded 2-4 times. A user reported a session of 1-pulled bosses showing as 3-4 pulls each in the report.

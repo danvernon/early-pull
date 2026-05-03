@@ -298,7 +298,10 @@ function EarlyPull:GetOrCreateSession(ts)
     self.db.sessions = self.db.sessions or {}
     local sessions = self.db.sessions
     local current = sessions[#sessions]
-    local _, instanceName, _, _, _, _, _, instanceID = GetInstanceInfo()
+    -- GetInstanceInfo returns (name, type, ...) — destructuring with leading
+    -- underscore was capturing the type as the name (so the header showed
+    -- "raid" instead of e.g. "Manaforge Omega").
+    local instanceName, _, _, _, _, _, _, instanceID = GetInstanceInfo()
     if current
        and (ts - (current.lastPullTs or current.startTs or 0)) < kSessionGapSeconds
        and current.instanceID == instanceID
@@ -324,20 +327,18 @@ end
 -- Append a pull record to the appropriate session.
 function EarlyPull:RecordPull(ctx, actor)
     if not (self.db and ctx) then return end
-    -- Sanitize fields that come from arbitrary API surfaces. Storing or
-    -- comparing a secret string later (e.g. as a leaderboard key) crashes,
-    -- so we drop secrecy at the storage boundary.
-    local rawName = actor and actor.name
-    local rawClass = actor and actor.classFilename
-    local pullerName = (rawName and not issecretvalue(rawName)) and rawName or nil
-    local pullerClass = (rawClass and not issecretvalue(rawClass)) and rawClass or nil
+    -- Store names/classes as-is, even if currently secret-wrapped. The
+    -- SavedVariables serializer normalizes secrets to plain text on disk,
+    -- so they reload as regular strings and accumulate in cross-session
+    -- history. Read-time aggregation (in Report.lua) filters anything that
+    -- is *still* secret in this session so it doesn't blow up table keys.
     local record = {
         ts = (GetServerTime and GetServerTime()) or time(),
         encounterID = ctx.encounterID,
         encounterName = tostring(ctx.encounterName or "?"),
         pullTimeDiff = ctx.pullTimeDiff,
-        pullerName = pullerName,
-        pullerClass = pullerClass,
+        pullerName = actor and actor.name or nil,
+        pullerClass = actor and actor.classFilename or nil,
         pullerIsTank = actor and actor.isTank or false,
     }
     local session = self:GetOrCreateSession(record.ts)
@@ -940,15 +941,19 @@ end
 function EarlyPull:FormatPullerName(actor)
     if not actor then return "[Unknown]" end
     local ok, formatted = pcall(function()
-        -- Strip secret-string values before they touch format() or string ops.
         local rawName = actor.name
-        local name = (rawName and not issecretvalue(rawName)) and rawName or "[Unknown]"
+        -- If the name is missing or secret, fall back to plain "[Unknown]"
+        -- with no class coloring. Wrapping "[Unknown]" in someone's class
+        -- color makes it look like a real player and is misleading.
+        if not rawName or issecretvalue(rawName) then
+            return "[Unknown]"
+        end
         local class = safeKey(actor.classFilename)
         if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
             local c = RAID_CLASS_COLORS[class]
-            return format("|cff%02x%02x%02x%s|r", c.r * 255, c.g * 255, c.b * 255, name)
+            return format("|cff%02x%02x%02x%s|r", c.r * 255, c.g * 255, c.b * 255, rawName)
         end
-        return tostring(name)
+        return tostring(rawName)
     end)
     if ok and formatted then return formatted end
     return "[Unknown]"

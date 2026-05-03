@@ -21,14 +21,23 @@ local function classifyDiffShort(diff)
     end
 end
 
+local issecretvalue = _G.issecretvalue or function() return false end
+
 local function aggregatePulls(pulls)
     local agg = {}
     local order = {}
     for _, p in ipairs(pulls) do
-        local key = p.pullerName or "[Unknown]"
+        -- Filter secret-wrapped names that are still secret in this session.
+        -- Once names go through a save/reload cycle the wrap is lost and
+        -- they read as plain strings, but in-session names from the damage
+        -- meter API can still be wrapped — using one as a table key crashes.
+        local rawName = p.pullerName
+        local key = (rawName and not issecretvalue(rawName)) and rawName or "[Unknown]"
+        local rawClass = p.pullerClass
+        local class = (rawClass and not issecretvalue(rawClass)) and rawClass or nil
         local a = agg[key]
         if not a then
-            a = {name = key, class = p.pullerClass, count = 0, early = 0, ontime = 0, late = 0, untimed = 0}
+            a = {name = key, class = class, count = 0, early = 0, ontime = 0, late = 0, untimed = 0}
             agg[key] = a
             order[#order + 1] = a
         end
@@ -98,7 +107,8 @@ end
 
 -- Pick the session the leaderboard should display. Prefers the most recent
 -- session that matches the current instance; falls back to the most recent
--- session overall if the player is not currently in one.
+-- session overall if the player is not currently in one (so the report is
+-- still readable back in town after raid).
 local function resolveScopeSession(sessions)
     if #sessions == 0 then return nil end
     local _, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
@@ -112,7 +122,8 @@ local function resolveScopeSession(sessions)
     return sessions[#sessions]
 end
 
--- Render a ranked leaderboard for a single set of pulls.
+-- Render a ranked leaderboard for a single set of pulls. Returns a table of
+-- lines (no trailing blank).
 local function renderLeaderboard(pulls, headerLine)
     local lines = {}
     lines[#lines + 1] = headerLine
@@ -145,9 +156,10 @@ local function renderLeaderboard(pulls, headerLine)
     return lines
 end
 
--- Returns the leaderboard for the current session, with an Overall section
--- on top and per-boss sub-leaderboards below — mirroring how Details!
--- separates segments within one raid night.
+-- Returns the leaderboard portion of the report — Details-style segmented
+-- view of the current session. The top section aggregates everything;
+-- below that, one mini-leaderboard per boss in the order they were first
+-- pulled (most recent encounter last, like Details' segment list).
 function EarlyPull:BuildLeaderboard()
     local sessions = self.db and self.db.sessions or {}
     local session = resolveScopeSession(sessions)
@@ -157,7 +169,8 @@ function EarlyPull:BuildLeaderboard()
 
     local scopeName = session.instanceName or "?"
 
-    -- Filter tanks out and group by encounter (preserving first-seen order).
+    -- Group session pulls by encounter, keeping the encounter order they
+    -- first appeared. Filter tanks out at the same time.
     local nonTank = {}
     local tankHidden = 0
     local byEncounter = {}
@@ -184,6 +197,8 @@ function EarlyPull:BuildLeaderboard()
     end
 
     local lines = {}
+
+    -- Overall section at the top.
     local header = format("EarlyPull Pull Report — %s — %d non-tank pull%s%s",
         tostring(scopeName), #nonTank, #nonTank == 1 and "" or "s",
         tankHidden > 0 and format(" (%d tank pulls hidden)", tankHidden) or "")
@@ -191,6 +206,7 @@ function EarlyPull:BuildLeaderboard()
         lines[#lines + 1] = line
     end
 
+    -- Per-encounter sections below.
     if #encounterOrder > 1 then
         for _, bucket in ipairs(encounterOrder) do
             lines[#lines + 1] = ""
@@ -323,6 +339,77 @@ function EarlyPull:PostReport(channel)
 end
 
 -- ---------------------------------------------------------------------------
+-- Test data seeding (local dev only — not in the released code)
+-- ---------------------------------------------------------------------------
+
+function EarlyPull:SeedTestReport()
+    if not self.db then return end
+    self.db.sessions = self.db.sessions or {}
+
+    local now = (GetServerTime and GetServerTime()) or time()
+    local twoHoursAgo = now - 2 * 60 * 60
+
+    local fakePulls = {
+        -- (offset_from_start, encounter, timing_diff, name, class, isTank)
+        {  0,   "Saboteur Kip'tilak",  -0.18, "Itsamemonk-Kazzak",   "MONK",        true },
+        {  90,  "Saboteur Kip'tilak",  -0.42, "Stoley-TarrenMill",   "HUNTER",      false },
+        {  240, "Saboteur Kip'tilak",   0.11, "Itsamemonk-Kazzak",   "MONK",        true },
+        {  410, "Saboteur Kip'tilak",  -1.20, "Treaderzwl-Kazzak",   "WARLOCK",     false },
+        {  580, "Saboteur Kip'tilak",   0.38, "Brightward-TarrenMill","PALADIN",    true },
+        {  720, "Saboteur Kip'tilak",  -0.80, "Stoley-TarrenMill",   "HUNTER",      false },
+        {  900, "One-Armed Bandit",    -0.05, "Itsamemonk-Kazzak",   "MONK",        true },
+        { 1080, "One-Armed Bandit",    -2.10, "Zheenevo",            "EVOKER",      false },
+        { 1260, "One-Armed Bandit",     0.61, "Treaderzwl-Kazzak",   "WARLOCK",     false },
+        { 1440, "One-Armed Bandit",     nil,  nil,                   nil,           false },
+        { 1620, "Crown of the Cosmos", -0.34, "Stoley-TarrenMill",   "HUNTER",      false },
+        { 1800, "Crown of the Cosmos", -0.09, "Itsamemonk-Kazzak",   "MONK",        true },
+    }
+
+    local session = {
+        startTs = twoHoursAgo,
+        lastPullTs = twoHoursAgo + fakePulls[#fakePulls][1],
+        instanceID = 0,
+        instanceName = "[TEST] Manaforge Omega",
+        isTest = true,
+        pulls = {},
+    }
+
+    for _, fp in ipairs(fakePulls) do
+        table.insert(session.pulls, {
+            ts = twoHoursAgo + fp[1],
+            encounterID = 0,
+            encounterName = fp[2],
+            pullTimeDiff = fp[3],
+            pullerName = fp[4],
+            pullerClass = fp[5],
+            pullerIsTank = fp[6],
+        })
+    end
+
+    table.insert(self.db.sessions, session)
+    self:Print("Seeded a test session with "..#fakePulls.." pulls. Use /earlypull clear-test to remove.")
+    self:ShowReport()
+end
+
+function EarlyPull:ClearTestSessions()
+    if not (self.db and self.db.sessions) then return end
+    local kept = {}
+    local removed = 0
+    for _, s in ipairs(self.db.sessions) do
+        if s.isTest then
+            removed = removed + 1
+        else
+            kept[#kept + 1] = s
+        end
+    end
+    self.db.sessions = kept
+    self:Print(format("Removed %d test session%s.", removed, removed == 1 and "" or "s"))
+    if self.reportFrame and self.reportFrame:IsShown() then
+        self:RefreshReport()
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Slash command extension
 -- ---------------------------------------------------------------------------
 
@@ -340,6 +427,10 @@ SlashCmdList.EARLYPULL = function(msg)
         EarlyPull:PostReport("PARTY")
     elseif arg == "stats-print" then
         EarlyPull:Print(EarlyPull:BuildReport())
+    elseif arg == "test-report" then
+        EarlyPull:SeedTestReport()
+    elseif arg == "clear-test" then
+        EarlyPull:ClearTestSessions()
     else
         if original then original(msg) end
     end

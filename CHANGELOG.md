@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.7.0-rc1
+
+Tag damage-meter-resolved pullers as tanks when they're assigned the tank role, so the report's tank exclusion still works when boss-target fails.
+
+The boss-target resolver tags `isTank=true` on actors it returns (because the boss is targeting them = they have aggro = they're functionally the tank). The damage-meter resolver had no way to know — it gave us a name and class but no role. So when a tank's pull was resolved through the fallback path (which is most pulls in restricted Midnight raid combat), they ended up in the report leaderboard as a non-tank early pull.
+
+New helper `lookupRoleByName(playerName)` scans the raid/party roster for a matching name and returns `UnitGroupRolesAssigned` for them. The damage-meter resolver calls it on every selection — if the resolved player is assigned `TANK`, `bestActor.isTank = true`. The tank-pull message format and the leaderboard exclusion both kick in correctly from there.
+
+Also added `isTank=...` to the `DM selection:` diagnostic output so you can verify the role lookup is working.
+
 ## 2.6.3-rc1
 
 Strip developer-only test scaffolding (`SeedTestReport`, `ClearTestSessions`, and the `/earlypull test-report` / `clear-test` slash forms) that accidentally shipped in the v2.6.2-rc1 zip. No behavior change for users — those commands were intended to stay in the local working tree only and were never documented.

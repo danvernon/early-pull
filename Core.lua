@@ -802,6 +802,35 @@ end
 -- has highest threat, and at the very start of an encounter that's the
 -- person who pulled (typically the tank). Different API surface than CLEU
 -- and the damage meter — may bypass Midnight's restricted-state filters.
+-- Look up a player's assigned group role ("TANK" / "HEALER" / "DAMAGER" / "NONE")
+-- by name. Used when an actor is resolved via the damage-meter path (which
+-- doesn't tell us who's tanking) so we can still flag tank pulls correctly.
+local function lookupRoleByName(playerName)
+    if not playerName or type(playerName) ~= "string" or playerName == "" then return nil end
+    local playerNameOnly = playerName:match("^([^-]+)") or playerName
+
+    local function nameMatches(unit)
+        local n = GetUnitName(unit, true) or UnitName(unit)
+        if not n then return false end
+        if n == playerName then return true end
+        local short = n:match("^([^-]+)") or n
+        return short == playerNameOnly
+    end
+
+    if nameMatches("player") then
+        return UnitGroupRolesAssigned("player")
+    end
+    local prefix = IsInRaid() and "raid" or "party"
+    local count = IsInRaid() and 40 or 4
+    for i = 1, count do
+        local unit = prefix..i
+        if UnitExists(unit) and nameMatches(unit) then
+            return UnitGroupRolesAssigned(unit)
+        end
+    end
+    return nil
+end
+
 function EarlyPull:GetPullerFromBossTarget()
     for i = 1, 8 do
         local unit = "boss"..i.."target"
@@ -918,10 +947,23 @@ function EarlyPull:GetPullerFromDamageMeter()
         bestActor = session.combatSources[1]
     end
 
+    -- The damage-meter API doesn't surface roles, so a tank picking up the
+    -- pull comes back without isTank set — they'd then end up in the report
+    -- as a non-tank early pull. Cross-reference the resolved name against
+    -- the group's assigned roles and tag tanks here so the report exclusion
+    -- rule still applies.
+    if bestActor and not bestActor.isTank then
+        local role = lookupRoleByName(bestActor.name)
+        if role == "TANK" then
+            bestActor.isTank = true
+        end
+    end
+
     if self.autoPrintDetails then
-        self:Print(format("DM selection: bestActor=%s bestTotal=%s cmpErrors=%d sources=%d",
+        self:Print(format("DM selection: bestActor=%s bestTotal=%s cmpErrors=%d sources=%d isTank=%s",
             bestActor and tostring(bestActor.name) or "nil",
-            tostring(bestTotal), cmpErrors, #session.combatSources))
+            tostring(bestTotal), cmpErrors, #session.combatSources,
+            tostring(bestActor and bestActor.isTank or false)))
     end
     return bestActor
 end

@@ -481,7 +481,8 @@ end
 
 local function onChatMessage(self, text)
     local ctx = self.pullContext
-    if ctx and text and text:match("^Boss pulled") then
+    -- text:match throws on secret strings; guard before any string method call.
+    if ctx and type(text) == "string" and not issecretvalue(text) and text:match("^Boss pulled") then
         ctx.announceSeen = true
     end
 end
@@ -1013,6 +1014,19 @@ function EarlyPull:ENCOUNTER_START(encounterID, encounterName)
 
     encounterID = safeKey(encounterID) or 0
     local now = GetTime()
+
+    -- Some bosses fire ENCOUNTER_START multiple times per pull — phase
+    -- transitions and "encounter bar" updates trigger the event again. If
+    -- we already have an active context for this same encounter from
+    -- within the last 60 seconds, treat the new fire as a duplicate and
+    -- skip it. Otherwise we'd fire a second banner mid-fight and append a
+    -- duplicate record.
+    if self.pullContext
+       and self.pullContext.encounterID == encounterID
+       and (now - (self.pullContext.pullTime or 0)) < 60 then
+        return
+    end
+
     local expectedPullTime = self.expectedPullTimeDBM or self.expectedPullTimeBlizz
     local pullTimeDiff = expectedPullTime and abs(now - expectedPullTime) <= self.maxPullTimeDiff and now - expectedPullTime
     self.expectedPullTimeDBM = nil

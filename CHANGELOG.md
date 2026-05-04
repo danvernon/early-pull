@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.7.1-rc1
+
+Two fixes for noise and crashes during fights.
+
+- **Crash spam in chat handler.** A user reported `Core.lua:484: attempt to index local 'text' (a secret string value...)` firing 39 times in a single fight. The `onChatMessage` handler was calling `text:match("^Boss pulled")` directly on incoming chat-message text, but in restricted Midnight raid combat that text comes back secret-wrapped and `:match()` throws. Added `type(text) == "string" and not issecretvalue(text)` guards before the string method call.
+- **Duplicate banners mid-fight.** Some bosses fire `ENCOUNTER_START` multiple times per pull (phase transitions, encounter-bar updates). Each fire was resetting `pullContext` and re-running the resolution chain — fresh banner, fresh record, fresh diagnostic dumps. Now ignored: if we already have an active context for the same `encounterID` from within the last 60 seconds, the new fire is treated as a duplicate and skipped.
+
 ## 2.7.0-rc1
 
 Tag damage-meter-resolved pullers as tanks when they're assigned the tank role, so the report's tank exclusion still works when boss-target fails.

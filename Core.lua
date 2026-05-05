@@ -259,18 +259,16 @@ function EarlyPull:RegisterEvents()
         "GROUP_ROSTER_UPDATE",
         "UPDATE_INSTANCE_INFO",
         "ENCOUNTER_START",
-        "INSTANCE_ENCOUNTER_ENGAGE_UNIT",
         "DAMAGE_METER_COMBAT_SESSION_UPDATED",
-        "COMBAT_LOG_EVENT_UNFILTERED",
     }
+    -- COMBAT_LOG_EVENT_UNFILTERED is intentionally NOT registered. The
+    -- pre-v2.0 architecture used it for blame scoring but the damage-meter
+    -- rewrite replaced that path. Worse, Midnight's Restricted Addons system
+    -- treats CLEU registration as a protected action inside raid encounters
+    -- and floods BugGrabber with ADDON_ACTION_FORBIDDEN errors.
     for _, event in ipairs(events) do
         frame:RegisterEvent(event)
     end
-
-    frame:RegisterUnitEvent("UNIT_THREAT_LIST_UPDATE",
-        "boss1", "boss2", "boss3", "boss4", "boss5", "boss6", "boss7", "boss8")
-    frame:RegisterUnitEvent("UNIT_TARGET",
-        "boss1", "boss2", "boss3", "boss4", "boss5", "boss6", "boss7", "boss8")
 end
 
 function EarlyPull:InitSync()

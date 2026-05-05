@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.7.2-rc1
+
+Stop trying to register events the v2.0 rewrite no longer uses. A user reported `ADDON_ACTION_FORBIDDEN` for `EarlyPullEventFrame:RegisterEvent()` firing 141 times — Midnight's Restricted Addons system flagged `COMBAT_LOG_EVENT_UNFILTERED` as protected, and we were still trying to register it on every load even though the damage-meter rewrite had stopped using it.
+
+Removed from registration: `COMBAT_LOG_EVENT_UNFILTERED`, `INSTANCE_ENCOUNTER_ENGAGE_UNIT`, plus the `UNIT_THREAT_LIST_UPDATE` and `UNIT_TARGET` unit-event registrations for boss1..8. None of them feed any active code path post-v2.0. Dead handlers for these events still exist in `Core.lua` but are inert and will be cleaned up in a future pass.
+
 ## 2.7.1-rc1
 
 Two fixes for noise and crashes during fights.

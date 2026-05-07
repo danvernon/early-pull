@@ -805,18 +805,22 @@ end
 -- by name. Used when an actor is resolved via the damage-meter path (which
 -- doesn't tell us who's tanking) so we can still flag tank pulls correctly.
 local function lookupRoleByName(playerName)
-    -- Bail on missing/secret/non-string input. A secret-wrapped name passed
-    -- in would throw on every == comparison below, and DAMAGE_METER_COMBAT_SESSION_UPDATED
-    -- can fire thousands of times per fight — that's a lot of error spam.
-    if type(playerName) ~= "string" or playerName == "" or issecretvalue(playerName) then
-        return nil
-    end
+    -- Order is critical: issecretvalue MUST be checked before any string
+    -- operation including ==. Lua `or` short-circuits left-to-right, so a
+    -- `playerName == ""` written before issecretvalue would throw on a
+    -- secret-wrapped input. v2.7.3 had this exact bug and crashed 15k
+    -- times in one fight.
+    if type(playerName) ~= "string" then return nil end
+    if issecretvalue(playerName) then return nil end
+    if playerName == "" then return nil end
     local ok, playerNameOnly = pcall(function() return playerName:match("^([^-]+)") or playerName end)
     if not ok or not playerNameOnly then return nil end
 
     local function nameMatches(unit)
         local n = GetUnitName(unit, true) or UnitName(unit)
-        if type(n) ~= "string" or n == "" or issecretvalue(n) then return false end
+        if type(n) ~= "string" then return false end
+        if issecretvalue(n) then return false end
+        if n == "" then return false end
         if n == playerName then return true end
         local short = n:match("^([^-]+)") or n
         return short == playerNameOnly

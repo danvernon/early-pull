@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.7.4-rc1
+
+The v2.7.3 hot fix had the bug it claimed to fix. A user reported the same crash firing 15859 times — bigger than before because the error pop-up actually slows the client down enough to amplify the loop.
+
+The early-bail in `lookupRoleByName` was written as `if type(...) ~= "string" or playerName == "" or issecretvalue(playerName) then` — Lua `or` short-circuits left-to-right, so the `playerName == ""` equality check ran *before* `issecretvalue(playerName)` and threw on every secret-wrapped name. Same bug in `nameMatches`.
+
+Split each predicate into its own `if` so the order is unambiguous: type → issecretvalue → equality. No more reliance on `or` ordering for safety.
+
 ## 2.7.3-rc1
 
 Hot fix for a critical regression introduced in v2.7.0. A user reported `Core.lua:808: attempt to compare local 'playerName' (a secret string value)` firing **2606 times** in a single fight — once per damage event during the encounter, because the comparison threw, prevented `ctx.recorded` from being set, and so the next damage event re-entered the same path and crashed again.

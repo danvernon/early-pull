@@ -805,29 +805,41 @@ end
 -- by name. Used when an actor is resolved via the damage-meter path (which
 -- doesn't tell us who's tanking) so we can still flag tank pulls correctly.
 local function lookupRoleByName(playerName)
-    if not playerName or type(playerName) ~= "string" or playerName == "" then return nil end
-    local playerNameOnly = playerName:match("^([^-]+)") or playerName
+    -- Bail on missing/secret/non-string input. A secret-wrapped name passed
+    -- in would throw on every == comparison below, and DAMAGE_METER_COMBAT_SESSION_UPDATED
+    -- can fire thousands of times per fight — that's a lot of error spam.
+    if type(playerName) ~= "string" or playerName == "" or issecretvalue(playerName) then
+        return nil
+    end
+    local ok, playerNameOnly = pcall(function() return playerName:match("^([^-]+)") or playerName end)
+    if not ok or not playerNameOnly then return nil end
 
     local function nameMatches(unit)
         local n = GetUnitName(unit, true) or UnitName(unit)
-        if not n then return false end
+        if type(n) ~= "string" or n == "" or issecretvalue(n) then return false end
         if n == playerName then return true end
         local short = n:match("^([^-]+)") or n
         return short == playerNameOnly
     end
 
-    if nameMatches("player") then
-        return UnitGroupRolesAssigned("player")
-    end
-    local prefix = IsInRaid() and "raid" or "party"
-    local count = IsInRaid() and 40 or 4
-    for i = 1, count do
-        local unit = prefix..i
-        if UnitExists(unit) and nameMatches(unit) then
-            return UnitGroupRolesAssigned(unit)
+    -- Wrap the whole scan in pcall so any single secret-string surprise
+    -- inside the loop can't take down the resolver path.
+    local resultOk, role = pcall(function()
+        if nameMatches("player") then
+            return UnitGroupRolesAssigned("player")
         end
-    end
-    return nil
+        local prefix = IsInRaid() and "raid" or "party"
+        local count = IsInRaid() and 40 or 4
+        for i = 1, count do
+            local unit = prefix..i
+            if UnitExists(unit) and nameMatches(unit) then
+                return UnitGroupRolesAssigned(unit)
+            end
+        end
+        return nil
+    end)
+    if not resultOk then return nil end
+    return role
 end
 
 function EarlyPull:GetPullerFromBossTarget()

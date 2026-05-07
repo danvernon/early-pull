@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.7.3-rc1
+
+Hot fix for a critical regression introduced in v2.7.0. A user reported `Core.lua:808: attempt to compare local 'playerName' (a secret string value)` firing **2606 times** in a single fight — once per damage event during the encounter, because the comparison threw, prevented `ctx.recorded` from being set, and so the next damage event re-entered the same path and crashed again.
+
+The new `lookupRoleByName` helper was comparing the resolved actor name against unit names with `==` without checking for secret-wrapped strings. Both the input `playerName` and the unit names from `GetUnitName/UnitName` can be secret in restricted Midnight raid combat. Now:
+
+- Bail at the top if `playerName` is missing, non-string, empty, or secret.
+- Each unit-name comparison checks `issecretvalue` before the `==`.
+- The whole scan is wrapped in `pcall` as a final safety net so any future secret-string surprise inside `UnitGroupRolesAssigned` or similar can't take down the resolver chain.
+
+If you were on v2.7.0–v2.7.2 with a tank in your raid, you almost certainly hit this. v2.7.3 fixes it.
+
 ## 2.7.2-rc1
 
 Stop trying to register events the v2.0 rewrite no longer uses. A user reported `ADDON_ACTION_FORBIDDEN` for `EarlyPullEventFrame:RegisterEvent()` firing 141 times — Midnight's Restricted Addons system flagged `COMBAT_LOG_EVENT_UNFILTERED` as protected, and we were still trying to register it on every load even though the damage-meter rewrite had stopped using it.

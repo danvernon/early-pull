@@ -999,18 +999,24 @@ function EarlyPull:FormatPullerName(actor)
     if not actor then return "[Unknown]" end
     local ok, formatted = pcall(function()
         local rawName = actor.name
-        -- If the name is missing or secret, fall back to plain "[Unknown]"
-        -- with no class coloring. Wrapping "[Unknown]" in someone's class
-        -- color makes it look like a real player and is misleading.
-        if not rawName or issecretvalue(rawName) then
+        local class = safeKey(actor.classFilename)
+        local hasName = type(rawName) == "string" and rawName ~= ""
+                        and not issecretvalue(rawName)
+        local displayName
+        if hasName then
+            displayName = rawName
+        elseif class then
+            -- No usable name, but we have a class. Show "[Unknown WARRIOR]"
+            -- so the raid at least knows what kind of player pulled.
+            displayName = "[Unknown "..class.."]"
+        else
             return "[Unknown]"
         end
-        local class = safeKey(actor.classFilename)
         if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
             local c = RAID_CLASS_COLORS[class]
-            return format("|cff%02x%02x%02x%s|r", c.r * 255, c.g * 255, c.b * 255, rawName)
+            return format("|cff%02x%02x%02x%s|r", c.r * 255, c.g * 255, c.b * 255, displayName)
         end
-        return tostring(rawName)
+        return displayName
     end)
     if ok and formatted then return formatted end
     return "[Unknown]"

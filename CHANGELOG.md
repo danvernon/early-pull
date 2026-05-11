@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.8.0-rc1
+
+Recover usable information when the damage-meter API gives us a class but no name. Reading the actual SavedVariables of a Manaforge Omega raid showed ~62% of pulls had `pullerClass` set (`WARRIOR`, `MAGE`, `DEMONHUNTER`, ...) but no `pullerName` — Midnight's restricted state passes through class info while suppressing names.
+
+Previously all of those collapsed into a single `[Unknown]` row in the leaderboard with no class information. Now:
+
+- **Banner & chat** render `"[Unknown WARRIOR]"` colored in the warrior class color when the class is known but the name isn't. Still distinguishable as not a real player (the brackets give it away) but the raid at least sees what *kind* of player pulled.
+- **Leaderboard** aggregates these by class instead of name. So three unknown warriors and two unknown mages produce two rows: `[Unknown WARRIOR]: 3` and `[Unknown MAGE]: 2`, not one mega-row of `[Unknown]: 5`.
+- Pulls with genuinely no name *and* no class still collapse to plain `[Unknown]` uncolored.
+
 ## 2.7.4-rc1
 
 The v2.7.3 hot fix had the bug it claimed to fix. A user reported the same crash firing 15859 times — bigger than before because the error pop-up actually slows the client down enough to amplify the loop.

@@ -259,6 +259,7 @@ function EarlyPull:RegisterEvents()
         "GROUP_ROSTER_UPDATE",
         "UPDATE_INSTANCE_INFO",
         "ENCOUNTER_START",
+        "ENCOUNTER_END",
         "DAMAGE_METER_COMBAT_SESSION_UPDATED",
     }
     -- COMBAT_LOG_EVENT_UNFILTERED is intentionally NOT registered. The
@@ -1020,6 +1021,15 @@ function EarlyPull:FormatPullerName(actor)
     end)
     if ok and formatted then return formatted end
     return "[Unknown]"
+end
+
+-- Clear pullContext when the encounter ends so the next ENCOUNTER_START
+-- (a fresh pull after a wipe or kill) isn't mistaken for a phase-event
+-- duplicate of the previous pull. Without this, re-pulling the same boss
+-- within 60 seconds of the previous pull start gets silently dropped by
+-- the duplicate-skip in ENCOUNTER_START.
+function EarlyPull:ENCOUNTER_END(encounterID, encounterName, difficultyID, groupSize, success)
+    self.pullContext = nil
 end
 
 function EarlyPull:ENCOUNTER_START(encounterID, encounterName)

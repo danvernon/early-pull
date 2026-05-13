@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.2-rc1
+
+Quick re-pulls after a wipe were being silently dropped. The v2.7.1 phase-event deduplication compares the new `ENCOUNTER_START` against the last pull's encounter ID and timestamp — if both match within 60 seconds, the new fire is treated as a duplicate. That's correct mid-encounter (Blizzard's phase-bar updates do re-fire `ENCOUNTER_START`) but wrong for a wipe-then-repull cycle. The first re-pull after a sub-60-second wipe never made it past the guard, so it produced no banner and no record. Successive pulls in a wipe-fest would all be skipped, which is exactly the "lots of unknowns then nothing" pattern a user reported.
+
+Fix: listen to `ENCOUNTER_END` and clear `pullContext` on it. Wipes/kills both fire `ENCOUNTER_END` (with `success` set accordingly), so by the time the next `ENCOUNTER_START` arrives there's no stale context to match against — the new pull goes through normal resolution.
+
 ## 2.8.1-rc1
 
 Strip dev-only test scaffolding that slipped into the v2.8.0-rc1 zip (same accident as v2.6.2-rc1 → v2.6.3-rc1). `SeedTestReport`, `ClearTestSessions`, and the `/earlypull test-report` / `clear-test` slash forms are local-only by design and shouldn't ship. No user-facing behavior change.

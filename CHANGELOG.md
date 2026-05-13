@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.8.1-rc1
+
+Strip dev-only test scaffolding that slipped into the v2.8.0-rc1 zip (same accident as v2.6.2-rc1 → v2.6.3-rc1). `SeedTestReport`, `ClearTestSessions`, and the `/earlypull test-report` / `clear-test` slash forms are local-only by design and shouldn't ship. No user-facing behavior change.
+
 ## 2.8.0-rc1
 
 Recover usable information when the damage-meter API gives us a class but no name. Reading the actual SavedVariables of a Manaforge Omega raid showed ~62% of pulls had `pullerClass` set (`WARRIOR`, `MAGE`, `DEMONHUNTER`, ...) but no `pullerName` — Midnight's restricted state passes through class info while suppressing names.

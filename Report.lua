@@ -350,77 +350,6 @@ function EarlyPull:PostReport(channel)
 end
 
 -- ---------------------------------------------------------------------------
--- Test data seeding (local dev only — not in the released code)
--- ---------------------------------------------------------------------------
-
-function EarlyPull:SeedTestReport()
-    if not self.db then return end
-    self.db.sessions = self.db.sessions or {}
-
-    local now = (GetServerTime and GetServerTime()) or time()
-    local twoHoursAgo = now - 2 * 60 * 60
-
-    local fakePulls = {
-        -- (offset_from_start, encounter, timing_diff, name, class, isTank)
-        {  0,   "Saboteur Kip'tilak",  -0.18, "Itsamemonk-Kazzak",   "MONK",        true },
-        {  90,  "Saboteur Kip'tilak",  -0.42, "Stoley-TarrenMill",   "HUNTER",      false },
-        {  240, "Saboteur Kip'tilak",   0.11, "Itsamemonk-Kazzak",   "MONK",        true },
-        {  410, "Saboteur Kip'tilak",  -1.20, "Treaderzwl-Kazzak",   "WARLOCK",     false },
-        {  580, "Saboteur Kip'tilak",   0.38, "Brightward-TarrenMill","PALADIN",    true },
-        {  720, "Saboteur Kip'tilak",  -0.80, "Stoley-TarrenMill",   "HUNTER",      false },
-        {  900, "One-Armed Bandit",    -0.05, "Itsamemonk-Kazzak",   "MONK",        true },
-        { 1080, "One-Armed Bandit",    -2.10, "Zheenevo",            "EVOKER",      false },
-        { 1260, "One-Armed Bandit",     0.61, "Treaderzwl-Kazzak",   "WARLOCK",     false },
-        { 1440, "One-Armed Bandit",     nil,  nil,                   nil,           false },
-        { 1620, "Crown of the Cosmos", -0.34, "Stoley-TarrenMill",   "HUNTER",      false },
-        { 1800, "Crown of the Cosmos", -0.09, "Itsamemonk-Kazzak",   "MONK",        true },
-    }
-
-    local session = {
-        startTs = twoHoursAgo,
-        lastPullTs = twoHoursAgo + fakePulls[#fakePulls][1],
-        instanceID = 0,
-        instanceName = "[TEST] Manaforge Omega",
-        isTest = true,
-        pulls = {},
-    }
-
-    for _, fp in ipairs(fakePulls) do
-        table.insert(session.pulls, {
-            ts = twoHoursAgo + fp[1],
-            encounterID = 0,
-            encounterName = fp[2],
-            pullTimeDiff = fp[3],
-            pullerName = fp[4],
-            pullerClass = fp[5],
-            pullerIsTank = fp[6],
-        })
-    end
-
-    table.insert(self.db.sessions, session)
-    self:Print("Seeded a test session with "..#fakePulls.." pulls. Use /earlypull clear-test to remove.")
-    self:ShowReport()
-end
-
-function EarlyPull:ClearTestSessions()
-    if not (self.db and self.db.sessions) then return end
-    local kept = {}
-    local removed = 0
-    for _, s in ipairs(self.db.sessions) do
-        if s.isTest then
-            removed = removed + 1
-        else
-            kept[#kept + 1] = s
-        end
-    end
-    self.db.sessions = kept
-    self:Print(format("Removed %d test session%s.", removed, removed == 1 and "" or "s"))
-    if self.reportFrame and self.reportFrame:IsShown() then
-        self:RefreshReport()
-    end
-end
-
--- ---------------------------------------------------------------------------
 -- Slash command extension
 -- ---------------------------------------------------------------------------
 
@@ -438,10 +367,6 @@ SlashCmdList.EARLYPULL = function(msg)
         EarlyPull:PostReport("PARTY")
     elseif arg == "stats-print" then
         EarlyPull:Print(EarlyPull:BuildReport())
-    elseif arg == "test-report" then
-        EarlyPull:SeedTestReport()
-    elseif arg == "clear-test" then
-        EarlyPull:ClearTestSessions()
     else
         if original then original(msg) end
     end

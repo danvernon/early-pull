@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.9.0-rc1
+
+Pure cleanup release. Core.lua shrank from ~1400 lines to ~800 (about 600 lines removed) by stripping dead code left over from the pre-v2.0 architecture. No behavior change for users.
+
+Removed:
+
+- **Blame scoring cluster:** `DetermineBlame`, `FinalizeCandidate`, `FindPetOwner`, `GetBlameDesc`, `PrintCandidateDetails`, `IterateLogWindow` + its three iterator helpers + `binarySearchLogTime` + `AdvanceLog`. Replaced by the damage-meter API path in v2.0.
+- **Boss/threat scanning:** `ScanThreat`, `addThreatScanUnit`, `ScanBoss`, `ScanAllBosses`, plus the `UNIT_THREAT_LIST_UPDATE`, `UNIT_TARGET`, `INSTANCE_ENCOUNTER_ENGAGE_UNIT`, and `COMBAT_LOG_EVENT_UNFILTERED` orphaned handlers. The event registrations had already been removed in v2.7.2; the handler bodies were dead weight.
+- **Sync coordination:** `OnSync`, `SendSync`, `CreateSyncTable`, `SerializeSyncTable`, `DeserializeSyncTable`, `CompareSyncTables`, `CheckSyncTableEncounter`, `IsMySyncTable`, `GetGroupRank`, `InitSync`, plus the EarlyPull-prefix branch in `CHAT_MSG_ADDON`. The multi-user sync was for the original WA's announce-arbitration; v2.x is local-banner-only and doesn't need it.
+- **Ring-buffer initialization in `Init`:** `combatLog`, `threatLog`, `targetLog`, `bossLog`, `syncLog`, `summons`, `summons2`, `unitList`, the combatLog event-filter tables — all populated to support the dead scoring path.
+- **Defaults:** `syncPriority`, `criticalWindowBegin/End`, `timelinessDecayRate`, `timelinessOffset`, every `combatLog*`, `threatLog*`, `targetLog*` scoring weight, `spellBlameCutoff`, `lowCertaintyCutoff`. Settings panel never exposed these so no user-visible change. The old keys persist harmlessly in existing `EarlyPullDB` until reset.
+- **Unused localized imports:** `assert`, `floor`, `max`, `wipe`, `SendChatMessage` global (we use `C_ChatInfo.SendChatMessage`), `UnitDetailedThreatSituation`, `UnitPlayerControlled`, `CombatLogGetCurrentEventInfo`, the `kSourceFlag*` and `kDestFlag*` and `kNegInfinity` constants.
+
+Smoke test: file parses, all live function references resolved, all dead references confirmed gone.
+
 ## 2.8.2
 
 Stable release. Code identical to v2.8.2-rc1 — promoted after verifying the v2.8.2-rc1 build captured all 16 pulls from a real Manaforge Omega raid session today (no re-pull drops, name resolution working where Midnight's API allows). Recommended version going forward.

@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.9.0-rc1
+## 2.9.0
+
+- Added World of Warcraft 12.1 (Interface 120100) compatibility metadata.
+- Promoted the tested 2.9.0 release candidate to stable.
 
 Pure cleanup release. Core.lua shrank from ~1400 lines to ~800 (about 600 lines removed) by stripping dead code left over from the pre-v2.0 architecture. No behavior change for users.
 

@@ -716,14 +716,51 @@ function EarlyPull:EARLY_PULL_AFTER_PULL(id, pullTime, afterPullIndex)
     end
 end
 
+function EarlyPull:GetBannerFrame()
+    if self.bannerFrame then return self.bannerFrame end
+
+    local frame = CreateFrame("Frame", "EarlyPullBannerFrame", UIParent)
+    frame:SetFrameStrata("HIGH")
+    frame:SetSize(900, 80)
+    frame:SetPoint("TOP", UIParent, "TOP", 0, -180)
+    frame:Hide()
+
+    local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    text:SetPoint("CENTER")
+    text:SetWidth(880)
+    text:SetJustifyH("CENTER")
+    text:SetTextColor(1, 0.3, 0.3)
+    frame.text = text
+
+    self.bannerFrame = frame
+    return frame
+end
+
+function EarlyPull:ShowBanner(message)
+    -- Never feed secret text into a FontString. More importantly, use an
+    -- addon-owned frame rather than Blizzard's shared RaidWarningFrame: in
+    -- restricted combat that frame can contain secret-backed measurements,
+    -- and RaidNotice_AddMessage's line-limit arithmetic then errors while the
+    -- execution path is tainted by EarlyPull.
+    if type(message) ~= "string" or issecretvalue(message) then
+        message = "Boss pulled."
+    end
+
+    local frame = self:GetBannerFrame()
+    self.bannerSequence = (self.bannerSequence or 0) + 1
+    local sequence = self.bannerSequence
+    frame.text:SetText(message)
+    frame:Show()
+    C_Timer.After(4, function()
+        if self.bannerSequence == sequence then
+            frame:Hide()
+        end
+    end)
+end
+
 function EarlyPull:Announce(announceChannel, message)
     if announceChannel == "BANNER" then
-        if RaidNotice_AddMessage and RaidWarningFrame then
-            local info = ChatTypeInfo and ChatTypeInfo["RAID_WARNING"]
-            RaidNotice_AddMessage(RaidWarningFrame, message, info or {r = 1, g = 0.3, b = 0.3})
-        else
-            self:Print(message)
-        end
+        self:ShowBanner(message)
         return true
     elseif announceChannel == "CHAT" then
         self:Print(message)

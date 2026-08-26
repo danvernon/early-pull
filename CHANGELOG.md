@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.1
+
+- Fixed repeated secret-number errors from Blizzard's raid-warning line-limit code during restricted raid combat.
+- Banner messages now use an EarlyPull-owned display frame instead of tainting the shared `RaidWarningFrame`.
+
 ## 2.9.0
 
 - Added World of Warcraft 12.1 (Interface 120100) compatibility metadata.
